@@ -11,6 +11,8 @@ Frank Heberling (Frank.Heberling@kit.edu)
 import numpy as Num
 import random
 import wx
+import time
+from pylab import *
 
 from tdl.modules.sxrd.ctrfitcalcs import *
 ############################### methods used by simplex ############################################################################################
@@ -196,13 +198,13 @@ def simplex(StatusBar,parameter,param_usage, dat, cell, surface_tmp, NLayers, da
         mini, maxi = min_max(function_values)
         act_ftol = calc_ftol(function_values)
         if function_values[mini]<old_mini:
-            statusstring ='iteration '+str(z)+', best chi**2 = '+str(round(function_values[mini],4))+' ftol = '+str(round(act_ftol,6))
+            statusstring ='iteration '+str(z)+', best chi**2 = '+str(round(function_values[mini],4))+' ftol = '+str(round(act_ftol,8))
             StatusBar.SetStatusText(statusstring,0)
-            panel.Figure1 = plot_rods(panel.Figure1, StatusBar.nb.data, \
-                                                             StatusBar.nb.MainControlPage.plotdims, StatusBar.nb.MainControlPage.doplotbulk,\
-                                                             StatusBar.nb.MainControlPage.doplotsurf, StatusBar.nb.MainControlPage.doplotrough,\
-                                                             StatusBar.nb.MainControlPage.doplotwater, function_values[mini])
-            panel.Figure1.canvas.draw()
+            #panel.Figure1 = plot_rods(panel.Figure1, StatusBar.nb.data, \
+            #                                                 StatusBar.nb.MainControlPage.plotdims, StatusBar.nb.MainControlPage.doplotbulk,\
+            #                                                 StatusBar.nb.MainControlPage.doplotsurf, StatusBar.nb.MainControlPage.doplotrough,\
+            #                                                 StatusBar.nb.MainControlPage.doplotwater, function_values[mini])
+            #panel.Figure1.canvas.draw()
             panel.Figure3 = parameter_plot(panel.Figure3,used_params,parameter,points,mini)
             old_mini = function_values[mini]
             
@@ -304,7 +306,7 @@ def statistics(fpc, parameter,param_usage, dat, cell,surface_tmp, NLayers, datab
             if parameter[key][5] in keys:
                 parameter[key][4] = parameter[parameter[key][5]][4]
     except:
-        print "There's a hole in the matrix !!! Omit unused or insignificant parameters in the calculation.\n"
+        print "There's a hole in the matrix !!!\nOmit unused or insignificant parameters in the calculation.\n"
         
     return parameter, X, C, used_params, R
 

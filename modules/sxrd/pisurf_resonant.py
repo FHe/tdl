@@ -12,7 +12,7 @@ import numpy as Num
 from pylab import *
 import wx
 
-from tdl.modules.sxrd.ctrfitcalcs import param_unfold,RB_update
+from tdl.modules.sxrd.ctrfitcalcs import param_unfold,RB_update, calcM
 from tdl.modules.sxrd.resonant_simplex import res_simplex, res_param_statistics
 from tdl.modules.sxrd.fourierframe import createfourierframe
 from tdl.modules.sxrd.resonant_calcs import *
@@ -186,6 +186,8 @@ class ResonantDataPanel(wx.ScrolledWindow):
                 self.nb.MainControlPage.el = str.lower(self.resel)
                 if str.lower(self.resel) not in self.nb.runningDB.keys():
                     self.nb.runningDB[str.lower(self.resel)] = database[str.lower(self.resel)]
+                for dat in self.nb.data:
+                    dat.calc_fel(self.nb.runningDB, self.resel)
         except ValueError:
             pass
 
@@ -195,7 +197,7 @@ class ResonantDataPanel(wx.ScrolledWindow):
         global_parms, surface_new = param_unfold(self.nb.parameter,self.nb.parameter_usage,self.nb.surface,\
                                                  self.nb.MainControlPage.UBW_flag, self.nb.MainControlPage.use_lay_el)
         bulk = self.nb.bulk 
-        surface = RB_update(self.nb.rigid_bodies, surface_new, self.nb.parameter, self.allrasd.cell)
+        surface = RB_update(self.nb.rigid_bodies, surface_new, self.nb.parameter, calcM(self.allrasd.cell))
         for Rasd in self.allrasd.list:
             Rasd.re_FNR ,Rasd.im_FNR = calcFNR(Rasd.Q,global_parms, self.allrasd.cell, bulk, surface, database,\
                                                self.allrasd.g_inv, self.nb.MainControlPage.UBW_flag,\
@@ -334,15 +336,16 @@ class ResonantDataPanel(wx.ScrolledWindow):
 
         res_params = {}
 
-        global_params = ['z_el','d_el','sig_el','sig_el_bar','K','occ_el_0','zwater','sig_water','sig_water_bar','d_water','beta','Scale','specScale']
+        global_params = ['z_el','d_el','sig_el','sig_el_bar','K','occ_el_0']
         for i in range(len(res_param_usage)):
-            for j in range(1,20,2):
+            for j in range(1,26,2):
                 if res_param_usage[i][j] not in res_params and res_param_usage[i][j] != 'None':
                     res_params[res_param_usage[i][j]] = self.nb.parameter[res_param_usage[i][j]]
         for key in global_params:
             res_params[key] = self.nb.parameter[key]
+        res_params['resonant']= [0,0,0,False,0,'']
 			
-        self.fig8 = plot_Ar_Pr_Q(self.fig8,  self.allrasd, self.Qmax, res_surface, res_params, res_param_usage, self.nb.MainControlPage.UBW_flag, self.nb.MainControlPage.use_lay_el)
+        self.fig8 = plot_Ar_Pr_Q(self.fig8,  self.allrasd, self.Qmax, res_surface, res_params, res_param_usage, self.nb.MainControlPage.use_lay_el)
         self.fig8.canvas.draw()
         
     def OnClickRefine(self,e):
@@ -355,17 +358,18 @@ class ResonantDataPanel(wx.ScrolledWindow):
 
         res_params = {}
 
-        global_params = ['z_el','d_el','sig_el','sig_el_bar','K','occ_el_0','zwater','sig_water','sig_water_bar','d_water','beta','Scale','specScale']
+        global_params = ['z_el','d_el','sig_el','sig_el_bar','K','occ_el_0']
         for i in range(len(res_param_usage)):
-            for j in range(1,20,2):
+            for j in range(1,26,2):
                 if res_param_usage[i][j] not in res_params and res_param_usage[i][j] != 'None':
                     res_params[res_param_usage[i][j]] = self.nb.parameter[res_param_usage[i][j]]
         for key in global_params:
             res_params[key] = self.nb.parameter[key]
+        res_params['resonant']= [0,0,0,False,0,'']
    
         self.allrasd, res_params = res_simplex(self.nb.frame.statusbar,res_params,res_param_usage, self.allrasd, res_surface, self.simplex_params,\
                                                self.nb.MainControlPage.UBW_flag, self.nb.MainControlPage.use_lay_el)
-
+        del res_params['resonant']
         if self.allrasd.Refine_Data:
             if self.fig7 == None:
                 self.fig7 = figure(7)
@@ -429,17 +433,19 @@ class ResonantDataPanel(wx.ScrolledWindow):
 
         res_params = {}
 
-        global_params = ['z_el','d_el','sig_el','sig_el_bar','K','occ_el_0','zwater','sig_water','sig_water_bar','d_water','beta','Scale','specScale']
+        global_params = ['z_el','d_el','sig_el','sig_el_bar','K','occ_el_0']
         for i in range(len(res_param_usage)):
-            for j in range(1,20,2):
+            for j in range(1,26,2):
                 if res_param_usage[i][j] not in res_params and res_param_usage[i][j] != 'None':
                     res_params[res_param_usage[i][j]] = self.nb.parameter[res_param_usage[i][j]]
         for key in global_params:
             res_params[key] = self.nb.parameter[key]
+        res_params['resonant']= [0,0,0,False,0,'']
+        
         res_params, correl_matrix, used_params = res_param_statistics(self.nb.MainControlPage.fpc,res_params,res_param_usage,\
                                                                                        self.allrasd, res_surface,self.nb.MainControlPage.UBW_flag, \
                                                                                        self.nb.MainControlPage.use_lay_el)
-        
+        del res_params['resonant']
         for i in res_params.keys():
             if res_params[i][3]:
                 self.nb.parameter[i][4] = res_params[i][4]

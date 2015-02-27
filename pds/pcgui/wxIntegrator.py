@@ -2,6 +2,12 @@
 Specfile Integrator
 Author: Craig Biwer (cbiwer@uchicago.edu)
 Last modified: 7.12.2012
+Modification by FHe (25.04.2014+10.12.2014):
+added saveRIDS function to sort and save RIDS
+data in a format compatible with the modelling tool
+added saveCTR function to sort and save CTR
+data in a format compatible with the modelling tool
+(including Alpha and Beta)
 '''
 
 import os
@@ -55,9 +61,17 @@ class Integrator(wx.Frame, wx.Notebook, wxUtil):
             self.saveHKL = self.fileMenu.Append(-1, 'Save HKLFFerr...',
                                                 'Write H, K, L, F, and Ferr\n' +
                                                 'values to a file')
+            self.saveCtr = self.fileMenu.Append(-1, 'Save CTR...',
+                                                 'Write H, K, L, F,\n' + 
+                                                 'Ferr, Alpha, and Beta \n' +
+                                                 'values to a file')
             self.saveHKLE = self.fileMenu.Append(-1, 'Save HKLEFFerr...',
                                                  'Write H, K, L, E, F, and\n' + 
                                                  'Ferr values to a file')
+            self.saveRids = self.fileMenu.Append(-1, 'Save RIDS...',
+                                                 'Write H, K, L, E, F,\n' + 
+                                                 'Ferr, Alpha, and Beta \n' +
+                                                 'values to a file')
             self.menuBar.Append(self.fileMenu, 'File')
             
             self.editMenu = wx.Menu()
@@ -853,6 +867,8 @@ class Integrator(wx.Frame, wx.Notebook, wxUtil):
             self.Bind(wx.EVT_CLOSE, self.onClose)
             
             # Menu bindings
+            self.Bind(wx.EVT_MENU, self.saveRIDS, self.saveRids)
+            self.Bind(wx.EVT_MENU, self.saveCTR, self.saveCtr)
             self.Bind(wx.EVT_MENU, self.saveHKLEFFerr, self.saveHKLE)
             self.Bind(wx.EVT_MENU, self.saveHKLFFerr, self.saveHKL)
             self.Bind(wx.EVT_MENU, self.saveAttrFile, self.saveAttributes)
@@ -2359,6 +2375,89 @@ class Integrator(wx.Frame, wx.Notebook, wxUtil):
                     oops.Destroy()
                     raise
             saveDialog.Destroy()
+
+        # Write a file to the current directory containing the index, H, K,
+        # L, F, Ferr, Alpha and Beta values for each point
+        def saveCTR(self, event):
+            self.customSelection.customTree.Expand(\
+                    self.customSelection.customRoot)
+            self.customSelection.CenterOnParent()
+            userReply = self.customSelection.ShowModal()
+            if userReply == wx.ID_CANCEL:
+                self.hdfTree.SetFocus()
+                return
+            treeSelections = self.customSelection.customTree.GetSelections()
+            saveThese = []
+            for selected in treeSelections:
+                saveThese.extend(self.customTreeObject.getRelevantChildren(\
+                                        self.customSelection.customTree,
+                                        self.hdfObject,
+                                        selected))
+            saveThese = list(set(saveThese))
+            saveThese.sort()
+            
+            saveDialog = wx.FileDialog(self, message='Save file as...',
+                                       defaultDir=os.getcwd(), defaultFile='',
+                                       wildcard='lst files (*.lst)|*.lst|' + \
+                                                'All files (*.*)|*',
+                                       style=wx.SAVE | wx.OVERWRITE_PROMPT)
+            if saveDialog.ShowModal() == wx.ID_OK:
+                fname = saveDialog.GetPath()
+                try:
+                    allHs2 = self.hdfObject.get_all('H', saveThese)
+                    allKs2 = self.hdfObject.get_all('K', saveThese)
+                    allLs2 = self.hdfObject.get_all('L', saveThese)
+                    allFs2 = self.hdfObject.get_all(('det_0', 'F'), saveThese)
+                    allFerrs2 = self.hdfObject.get_all(('det_0', 'Ferr'), saveThese)
+                    allAlphas2 = self.hdfObject.get_all(('det_0', 'alpha'), saveThese)
+                    allBetas2 = self.hdfObject.get_all(('det_0', 'beta'), saveThese)
+                    #create lists from hdf dicts for sorting
+                    allHs = []
+                    allKs = []
+                    allLs = []
+                    allFs = []
+                    allFerrs = []
+                    allAlphas = []
+                    allBetas = []
+                    for k in allHs2.keys():
+                        allHs.append(allHs2[k])
+                        allKs.append(allKs2[k])
+                        allLs.append(allLs2[k])
+                        allFs.append(allFs2[k])
+                        allFerrs.append(allFerrs2[k])
+                        allAlphas.append(allAlphas2[k])
+                        allBetas.append(allBetas2[k])
+                    #sort
+                    zipped = sorted(zip(allLs, allHs, allKs, allFs, allFerrs, allAlphas, allBetas))
+                    allLs, allHs, allKs, allFs, allFerrs, allAlphas, allBetas = zip(*zipped)
+                    #average H and K to avoid confusion in genX
+                    K = sum(allKs)/len(allKs)
+                    H = sum(allHs)/len(allHs)
+                    #write data to file
+                    f = open(fname, 'w')
+                    header = "#%7s %7s %7s %7s %7s %7s %7s\n" % \
+                                  ('H','K','L','F','Ferr','Alpha','Beta')
+                    f.write(header)
+                    for i in range(len(allLs)):
+                        if allFs[i] == 0 and allFerrs[i] == 0:
+                            pass
+                        else:
+                            line = " %7.1f %7.1f %7.3f %7.5g %7.5g %7.2f %7.2f \n" % \
+                                   (H,
+                                    K,
+                                    allLs[i],
+                                    allFs[i],
+                                    allFerrs[i],
+                                    allAlphas[i],
+                                    allBetas[i])
+                            f.write(line)
+                    f.close()
+                except Exception:
+                    oops = wx.MessageDialog(self, 'Error saving file\n' + str(Exception))
+                    oops.ShowModal()
+                    oops.Destroy()
+                    raise
+            saveDialog.Destroy()
             
         # Write a file to the current directory containing the index, H, K,
         # L, E, F, and Ferr values for each point
@@ -2411,6 +2510,93 @@ class Integrator(wx.Frame, wx.Notebook, wxUtil):
                                     allEs[iterData],
                                     allFs[iterData],
                                     allFerrs[iterData])
+                            f.write(line)
+                    f.close()
+                except Exception:
+                    oops = wx.MessageDialog(self, 'Error saving file\n' + str(Exception))
+                    oops.ShowModal()
+                    oops.Destroy()
+                    raise
+            saveDialog.Destroy()
+
+        #write E, H, K, L, F, Ferr, Alpha, Beta sorted by 'E' and with average H,K,L values to file
+        def saveRIDS(self, event):
+            #first part copied from saveHKLEFFerr
+            self.customSelection.customTree.Expand(\
+                    self.customSelection.customRoot)
+            self.customSelection.CenterOnParent()
+            userReply = self.customSelection.ShowModal()
+            if userReply == wx.ID_CANCEL:
+                self.hdfTree.SetFocus()
+                return
+            treeSelections = self.customSelection.customTree.GetSelections()
+            saveThese = []
+            for selected in treeSelections:
+                saveThese.extend(self.customTreeObject.getRelevantChildren(\
+                                        self.customSelection.customTree,
+                                        self.hdfObject,
+                                        selected))
+            saveThese = list(set(saveThese))
+            saveThese.sort()
+            saveDialog = wx.FileDialog(self, message='Save file as...',
+                                       defaultDir=os.getcwd(), defaultFile='',
+                                       wildcard='rds files (*.rds)|*.rds|' + \
+                                                'All files (*.*)|*',
+                                       style=wx.SAVE | wx.OVERWRITE_PROMPT)
+            if saveDialog.ShowModal() == wx.ID_OK:
+                fname = saveDialog.GetPath()
+                try:
+                    allHs2 = self.hdfObject.get_all('H', saveThese)
+                    allKs2 = self.hdfObject.get_all('K', saveThese)
+                    allLs2 = self.hdfObject.get_all('L', saveThese)
+                    allEs2 = self.hdfObject.get_all('Energy', saveThese)
+                    allFs2 = self.hdfObject.get_all(('det_0', 'F'), saveThese)
+                    allFerrs2 = self.hdfObject.get_all(('det_0', 'Ferr'), saveThese)
+                    allAlphas2 = self.hdfObject.get_all(('det_0', 'alpha'), saveThese)
+                    allBetas2 = self.hdfObject.get_all(('det_0', 'beta'), saveThese)
+                    #create lists from hdf dicts for sorting
+                    allHs = []
+                    allKs = []
+                    allLs = []
+                    allEs = []
+                    allFs = []
+                    allFerrs = []
+                    allAlphas = []
+                    allBetas = []
+                    for k in allHs2.keys():
+                        allHs.append(allHs2[k])
+                        allKs.append(allKs2[k])
+                        allLs.append(allLs2[k])
+                        allEs.append(allEs2[k])
+                        allFs.append(allFs2[k])
+                        allFerrs.append(allFerrs2[k])
+                        allAlphas.append(allAlphas2[k])
+                        allBetas.append(allBetas2[k])
+                    #sort
+                    zipped = sorted(zip(allEs, allHs, allKs, allLs, allFs, allFerrs, allAlphas, allBetas))
+                    allEs, allHs, allKs, allLs, allFs, allFerrs, allAlphas, allBetas = zip(*zipped)
+                    #average H,K, and L to avoid confusion in genX
+                    L = sum(allLs)/len(allLs)
+                    K = sum(allKs)/len(allKs)
+                    H = sum(allHs)/len(allHs)
+                    #write data to file
+                    f = open(fname, 'w')
+                    header = "#%7s %7s %7s %7s %7s %7s %7s %7s\n" % \
+                                  ('E','H','K','L','F','Ferr','Alpha','Beta')
+                    f.write(header)
+                    for i in range(len(allEs)):
+                        if allFs[i] == 0 and allFerrs[i] == 0:
+                            pass
+                        else:
+                            line = " %7.1f %7.1f %7.1f %7.3f %7.5g %7.5g %7.2f %7.2f \n" % \
+                                   (allEs[i]*1000,
+                                    H,
+                                    K,
+                                    L,
+                                    allFs[i],
+                                    allFerrs[i],
+                                    allAlphas[i],
+                                    allBetas[i])
                             f.write(line)
                     f.close()
                 except Exception:

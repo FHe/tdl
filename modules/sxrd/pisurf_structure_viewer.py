@@ -14,7 +14,7 @@ except ImportError:
     
 import numpy as Num
 from tdl.modules.sxrd.atom_styles import atom_styles
-from tdl.modules.sxrd.ctrfitcalcs import RB_update, param_unfold
+from tdl.modules.sxrd.ctrfitcalcs import RB_update, param_unfold, calcM
 
 ######################################################################################################
 
@@ -50,7 +50,7 @@ def Ellipsoid(center, color, U):
  
     # sample the quadric function
     sample = vtk.vtkSampleFunction()
-    sample.SetSampleDimensions(36,36,36)
+    sample.SetSampleDimensions(49,49,49)
     sample.SetImplicitFunction(quadric)
     sample.SetModelBounds(-2, 2, -2, 2, -2, 2)
  
@@ -77,16 +77,22 @@ def Ellipsoid(center, color, U):
 def createStructureRenderer(surface,cell,param,param_use,rigid_bodies,atom_styles):
     global_parms, surface = \
             param_unfold(param, param_use, surface, False, False)
-    surface = RB_update(rigid_bodies, surface, param, cell)
+    surface = RB_update(rigid_bodies, surface, param, calcM(cell))
     actors = []
     M = calcM(cell)
 
     supercell = []
     for i in surface:
         if i[10] > 0:
-            uxy = i[7] * (i[4] * i[5])**0.5
-            uxz = i[8] * (i[4] * i[6])**0.5
-            uyz = i[9] * (i[5] * i[6])**0.5            
+            if i[4] < 0.01: i[4] = 0.01
+            if i[5] < 0.01: i[5] = 0.01
+            if i[6] < 0.01: i[6] = 0.01
+            if i[4] == 0.01 and i[5] == 0.01 and i[6] == 0.01:
+               uxy = uxz = uyz = 0
+            else:
+                uxy = i[7] * (i[4] * i[5])**0.5
+                uxz = i[8] * (i[4] * i[6])**0.5
+                uyz = i[9] * (i[5] * i[6])**0.5            
             U = Num.array([[i[4],uxy,uxz],\
                            [uxy,i[5],uyz],\
                            [uxz,uyz,i[6]]],float)
@@ -141,9 +147,6 @@ def createStructureRenderer(surface,cell,param,param_use,rigid_bodies,atom_style
     ren.SetBackground(0.0,0.0,0.0)
     ren.GetActiveCamera().ParallelProjectionOn()
     ren.ResetCamera()
-    ren.GetActiveCamera().Azimuth(180)
-    ren.GetActiveCamera().Elevation(270)
-    ren.ResetCameraClippingRange()
     return ren
 
 

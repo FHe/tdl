@@ -12,126 +12,108 @@ from pylab import *
 from scipy.optimize import leastsq
 from scipy.interpolate import interp1d
 
-from tdl.modules.sxrd.ctrfitcalcs import param_unfold,RB_update, calc_g_inv
+from tdl.modules.sxrd.ctrfitcalcs import param_unfold,RB_update, calc_g_inv, calcM
 from tdl.modules.sxrd.resonant_simplex import calc_F_lay_el
 from tdl.modules.xtab.atomic import f0data as database
 ###################################### calculations ####################################################
 def calc_FucNR(hkl,bulk,g_inv,database):
-    a = 0
-    b = 0
+    F = Num.complex(0)
     q = (Num.dot(Num.dot(hkl,g_inv),hkl))**0.5
     for i in range(shape(bulk)[0]):
         f_par = database[str.lower(bulk[i][0])]
-        f = (f_par[0]*Num.exp(-(q/4/Num.pi)**2*f_par[1]) + f_par[2]*Num.exp(-(q/4/Num.pi)**2*f_par[3]) +\
-            f_par[4]*Num.exp(-(q/4/Num.pi)**2*f_par[5]) + f_par[6]*Num.exp(-(q/4/Num.pi)**2*f_par[7]) + f_par[8])*\
+        f = (f_par[0]*Num.exp(-(q/2)**2*f_par[1]) + f_par[2]*Num.exp(-(q/2)**2*f_par[3]) +\
+            f_par[4]*Num.exp(-(q/2)**2*f_par[5]) + f_par[6]*Num.exp(-(q/2)**2*f_par[7]) + f_par[8])*\
             Num.exp(-2 * Num.pi**2 * q**2 * bulk[i][4])
-        a = a + (f * Num.cos(2*Num.pi*(hkl[0]*bulk[i][1] + hkl[1]*bulk[i][2] + hkl[2]*bulk[i][3])))
-        b = b + (f * Num.sin(2*Num.pi*(hkl[0]*bulk[i][1] + hkl[1]*bulk[i][2] + hkl[2]*bulk[i][3])))
-    return a, b
+        F += f * Num.exp(2.0j*Num.pi*(hkl[0]*bulk[i][1] + hkl[1]*bulk[i][2] + hkl[2]*bulk[i][3]))
+    return F
 
 def calc_FsurfNR(hkl,surface,g_inv,database):
-    a = 0
-    b = 0
     q = (Num.dot(Num.dot(hkl,g_inv),hkl))**0.5
     q_Ang = [hkl[0]*g_inv[0][0]**0.5, hkl[1]*g_inv[1][1]**0.5, hkl[2]*g_inv[2][2]**0.5]
+    domains = surface[-1][11]+1
+    F = Num.zeros((domains), dtype=complex)
+    k = 0
     for i in range(shape(surface)[0]):
         f_par = database[str.lower(surface[i][0])]
 
         U = Num.ndarray((3,3),float)
         U[0][0] = surface[i][4]
-        U[0][1] = surface[i][7]*(surface[i][4])**0.5*(surface[i][5])**0.5
-        U[0][2] = surface[i][8]*(surface[i][4])**0.5*(surface[i][6])**0.5
+        U[0][1] = surface[i][7]*(surface[i][4]*surface[i][5])**0.5
+        U[0][2] = surface[i][8]*(surface[i][4]*surface[i][6])**0.5
         U[1][0] = U[0][1]
         U[1][1] = surface[i][5]
-        U[1][2] = surface[i][9]*(surface[i][5])**0.5*(surface[i][6])**0.5
+        U[1][2] = surface[i][9]*(surface[i][5]*surface[i][6])**0.5
         U[2][0] = U[0][2]
         U[2][1] = U[1][2]
         U[2][2] = surface[i][6]
         
-        f = (f_par[0]*Num.exp(-(q/4/Num.pi)**2*f_par[1]) + f_par[2]*Num.exp(-(q/4/Num.pi)**2*f_par[3]) +\
-            f_par[4]*Num.exp(-(q/4/Num.pi)**2*f_par[5]) + f_par[6]*Num.exp(-(q/4/Num.pi)**2*f_par[7]) + f_par[8])*\
+        f = (f_par[0]*Num.exp(-(q/2)**2*f_par[1]) + f_par[2]*Num.exp(-(q/2)**2*f_par[3]) +\
+            f_par[4]*Num.exp(-(q/2)**2*f_par[5]) + f_par[6]*Num.exp(-(q/2)**2*f_par[7]) + f_par[8])*\
             Num.exp(-2* Num.pi**2*(Num.dot(q_Ang,Num.dot(U,q_Ang)))) * surface[i][10]
-        a = a + (f * Num.cos(2*Num.pi*(hkl[0]*surface[i][1] + hkl[1]*surface[i][2] + hkl[2]*surface[i][3])))
-        b = b + (f * Num.sin(2*Num.pi*(hkl[0]*surface[i][1] + hkl[1]*surface[i][2] + hkl[2]*surface[i][3])))
-    return a, b
+        if surface[i][11] == k:
+            F[k] = f * Num.exp(2.0j*Num.pi*(hkl[0]*surface[i][1] + hkl[1]*surface[i][2] + hkl[2]*surface[i][3]))
+            k +=1
+        else:
+            F[k-1] += f * Num.exp(2.0j*Num.pi*(hkl[0]*surface[i][1] + hkl[1]*surface[i][2] + hkl[2]*surface[i][3]))
+    return F
 
 def calc_Fwater_layeredNR(hkl, sig, sig_bar, d,zwater, g_inv, database, cell):
     f_par = database['o2-.']
     q = hkl[2]* g_inv[2][2]**0.5
     Auc = cell[0]* Num.sin(Num.radians(cell[5]))* cell[1]
-    f = Auc * d * 0.033456 * (f_par[0]*Num.exp(-(q/4/Num.pi)**2*f_par[1]) + f_par[2]*Num.exp(-(q/4/Num.pi)**2*f_par[3]) +\
-            f_par[4]*Num.exp(-(q/4/Num.pi)**2*f_par[5]) + f_par[6]*Num.exp(-(q/4/Num.pi)**2*f_par[7]) + f_par[8])*\
+    f = Auc * d * 0.033456 * (f_par[0]*Num.exp(-(q/2)**2*f_par[1]) + f_par[2]*Num.exp(-(q/2)**2*f_par[3]) +\
+            f_par[4]*Num.exp(-(q/2)**2*f_par[5]) + f_par[6]*Num.exp(-(q/2)**2*f_par[7]) + f_par[8])*\
             Num.exp(-2 * Num.pi**2 * q**2 * sig)
-    x = Num.pi * q * d
-    al = 2 * Num.pi**2 * q**2 * sig_bar
-    a = Num.exp(al)*Num.cos(2*x)-1
-    b = Num.exp(al)*Num.sin(-2*x)
-    c = 4 * Num.cos(x)**2 * Num.sinh(al/2)**2 - 4 * Num.sin(x)**2 * Num.cosh(al/2)**2
-    d = -2 * Num.sin(2*x) * Num.sinh(al)
-    rez = Num.cos(2*Num.pi*hkl[2]*zwater)
-    imz = Num.sin(2*Num.pi*hkl[2]*zwater)
-    relayer = (a*c + b*d)/(c**2 + d**2)
-    imlayer = (b*c - a*d)/(c**2 + d**2)
-    re = f* (relayer * rez - imlayer * imz)
-    im = f* (relayer * imz + imlayer * rez)
-    return re, im
+    Fz = Num.exp(2*Num.pi*1.0j*hkl[2]*zwater)
+    Flayer = 1/(1-Num.exp(-2 * Num.pi**2 * q**2 * sig_bar)*Num.exp(2*Num.pi*1.0j * q * d))
+    return f* Flayer*Fz
         
 def calc_F_layered_el_NR(hkl, occ, K, sig, sig_bar, d, d0, g_inv, database, el):
     f_par = database[el]
     q = hkl[2]* g_inv[2][2]**0.5
-    qd4pi = q/4/Num.pi
+    qd4pi = q/2
     f = (f_par[0]*Num.exp(-(qd4pi)**2*f_par[1]) + f_par[2]*Num.exp(-(qd4pi)**2*f_par[3]) +\
             f_par[4]*Num.exp(-(qd4pi)**2*f_par[5]) + f_par[6]*Num.exp(-(qd4pi)**2*f_par[7]) + f_par[8])*\
             Num.exp(-2 * Num.pi**2 * q**2 * sig)*occ
-    x = Num.pi * q * d
-    al = 2 * Num.pi**2 * q**2 * sig_bar + K * d
-    a = Num.exp(al)*Num.cos(2*x)-1
-    b = Num.exp(al)*Num.sin(-2*x)
-    c = 4 * Num.cos(x)**2 * Num.sinh(al/2)**2 - 4 * Num.sin(x)**2 * Num.cosh(al/2)**2
-    d = -2 * Num.sin(2*x) * Num.sinh(al)
-    wert = 2*Num.pi*hkl[2]*d0
-    rez = Num.cos(wert)
-    imz = Num.sin(wert)
-    wert = c**2 + d**2
-    relayer = (a*c + b*d)/(wert)
-    imlayer = (b*c - a*d)/(wert)
-    re = f* (relayer * rez - imlayer * imz)
-    im = f* (relayer * imz + imlayer * rez)
-    return re, im
+    Fz = Num.exp(2*Num.pi*1.0j*hkl[2]*d0)
+    Flayer = 1/(1-Num.exp(2.0j*Num.pi * q * d)*Num.exp(-2 * Num.pi**2 * q**2 * sig_bar + K * d))
+    return f* Flayer*Fz
 
 def calcFNR(hkl, global_parms, cell, bulk, surface, database, g_inv, use_bulk_water, use_lay_el, el):
     
-    occ_el, K,sig_el,sig_el_bar,d_el,d0_el,sig_water, sig_water_bar, d_water, zwater, Scale, specScale, beta= global_parms
+    (occ_el, K,sig_el,sig_el_bar,d_el,d0_el,sig_water,sig_water_bar, d_water,zwater,\
+     Scale,specScale,beta, domainfractions, coh_groups, d_kapton, mu_kapton, d_solution, mu_solution) = global_parms
 
     zeta = hkl[2]+ hkl[0]*cell[6]+ hkl[1]*cell[7]
 
-    re_ctr = 0.5
-    im_ctr = -1/(2*Num.tan(Num.pi*zeta))
+    F_ctr = 0.5 - 1.0j/(2*Num.tan(Num.pi*zeta))
 
-    re_bulk , im_bulk = calc_FucNR(hkl,bulk,g_inv,database)
-    re_surf, im_surf = calc_FsurfNR(hkl,surface,g_inv,database)
+    F_bulk = calc_FucNR(hkl,bulk,g_inv,database)
+    F_surf = calc_FsurfNR(hkl,surface,g_inv,database)
             
-    re_bc = re_ctr*re_bulk - im_ctr*im_bulk
-    im_bc = re_bulk*im_ctr + re_ctr*im_bulk
+    F_bc = F_ctr * F_bulk
     
     if hkl[0] == 0.0 and hkl[1] == 0.0:
         if not use_bulk_water:
-            re_water = 0
-            im_water = 0
+            F_water = 0
         else:
-            re_water, im_water = calc_Fwater_layeredNR(hkl, sig_water, sig_water_bar, d_water,zwater, g_inv, database, cell)
+            F_water = calc_Fwater_layeredNR(hkl, sig_water, sig_water_bar, d_water,zwater, g_inv, database, cell)
         if not use_lay_el:
-            re_el = 0
-            im_el = 0
+            F_el = 0
         else:
-            re_el, im_el = calc_F_layered_el_NR(hkl, occ_el, K, sig_el, sig_el_bar, d_el, d0_el, g_inv, database, el)
-                    
-        re_FNR = (re_bc + re_surf + re_water + re_el)
-        im_FNR = (im_bc + im_surf + im_water + im_el)
+            F_el = calc_F_layered_el_NR(hkl, occ_el, K, sig_el, sig_el_bar, d_el, d0_el, g_inv, database, el)
     else:
-        re_FNR = (re_bc + re_surf)
-        im_FNR = (im_bc + im_surf)
-    return re_FNR, im_FNR
+        F_water = 0
+        F_el = 0
+        
+    Ftot = 0
+    for j in range(len(coh_groups)):
+        Fcoh = 0
+        for index in coh_groups[j]:
+            Fcoh = Fcoh + domainfractions[index]*(F_bc + F_surf[index] + F_water+ F_el)
+        Ftot = Ftot + Fcoh
+    
+    return Num.real(Ftot), Num.imag(Ftot)
 ##########################################################################################
 ##################################################################################        
 class RasdList:
@@ -169,7 +151,7 @@ class RasdList:
 #####################################################################################    
 class RasdAna:
     """
-    Rasd Data object without image data to be used in Modell Refinement and Fourier component extraction 
+    Rasd Data object without image data to be used in Model Refinement and Fourier component extraction 
     """
     def __init__(self):
         self.E = Num.array([], float) #Energies to be changed by e0shift
@@ -267,7 +249,7 @@ def read_RSD(allrasd, bulk_tmp, surface_tmp, parameter, param_usage, rigid_bodie
     else:
         global_parms, surface_new = param_unfold(parameter,param_usage, surface_tmp, use_bulk_water, use_lay_el)
         bulk = bulk_tmp 
-        surface = RB_update(rigid_bodies, surface_new, parameter, allrasd.cell)
+        surface = RB_update(rigid_bodies, surface_new, parameter, calcM(allrasd.cell))
 
         cell = allrasd.cell
         g_inv = allrasd.g_inv
@@ -414,21 +396,21 @@ def RASD_Fourier(allrasd, pnt):
     Rasd.RMS = Num.sum(Rasd.delta_F)/(Rasd.ndata-4)
     Rasd.AR_err = Num.sqrt(Rasd.RMS*cov[2][2])
     Rasd.PR_err = Num.sqrt(Rasd.RMS*cov[3][3])
-
-    if Rasd.AR < 0 and Rasd.PR < 0 and Rasd.PR > -0.5:
+    
+    if Rasd.AR < 0 and Rasd.PR < 0.5 and Rasd.PR > 0.:
         Rasd.PR = Rasd.PR + 0.5
         Rasd.AR = -Rasd.AR
-    elif Rasd.AR > 0 and Rasd.PR < 0:
-        Rasd.PR = Rasd.PR + 1
     elif Rasd.AR < 0 and Rasd.PR > 0.5:
+        Rasd.PR = Rasd.PR -Num.trunc(Rasd.PR) - 0.5
         Rasd.AR = -Rasd.AR
-        Rasd.PR = Rasd.PR -0.5
-    elif Rasd.AR < 0 and Rasd.PR < 0.5 and Rasd.PR > 0:
+    elif Rasd.PR < 0 and Rasd.AR > 0:
+        Rasd.PR = Rasd.PR -Num.trunc(Rasd.PR)+ 1.
+    elif Rasd.AR < 0 and Rasd.PR < 0:
+        Rasd.PR = Rasd.PR -Num.trunc(Rasd.PR) + 0.5
         Rasd.AR = -Rasd.AR
-        Rasd.PR = Rasd.PR +0.5
     if Rasd.PR > 1:
-        Rasd.PR = Rasd.PR -1
-    
+        Rasd.PR = Rasd.PR -Num.trunc(Rasd.PR)
+        
     return Rasd
 #################  Fourier Synthese  ###########################################
 def calc_rho(Fourier, r, ginv):
@@ -461,10 +443,11 @@ def Fourier_synthesis(Fourier, cell, ZR, xf, yf, zf, an, bn, cn, zmin):
     return Rho, [sampx,sampy,sampz]
 	
 ############################################################################################################################################	
-def calc_A_P_Q(Qmax, g_inv, surface_tmp, parameter, param_usage, use_bulk_water, use_lay_el):
-    global_parms, surface = param_unfold(parameter,param_usage, surface_tmp, use_bulk_water, use_lay_el)
+def calc_A_P_Q(Qmax, g_inv, surface_tmp, parameter, param_usage, use_lay_el):
+    global_parms, surface = param_unfold(parameter,param_usage, surface_tmp, False, use_lay_el)
     natoms = len(surface)
-    occ_el, K,sig_el,sig_el_bar,d_el,d0_el,sig_water, sig_water_bar, d_water, zwater, Scale, specScale, beta= global_parms
+    (occ_el, K,sig_el,sig_el_bar,d_el,d0_el,sig_water,sig_water_bar, d_water,zwater,\
+     Scale,specScale,beta, domainfractions, coh_groups, d_kapton, mu_kapton, d_solution, mu_solution) = global_parms
     A = []
     P = []
     L = Num.arange(0.1,Qmax,0.01)
@@ -492,29 +475,32 @@ def calc_A_P_Q(Qmax, g_inv, surface_tmp, parameter, param_usage, use_bulk_water,
             re_Fq = re_Fq + re_lay
             im_Fq = im_Fq + im_lay                                    
 
-        PR = Num.arctan(im_Fq/re_Fq)/(2*Num.pi)
+        if re_Fq != 0:
+            PR = Num.arctan(im_Fq/re_Fq)/(2*Num.pi)
+        else:
+            PR = 0
         AR = re_Fq /Num.cos(2*Num.pi*PR)
 		
 	if AR < 0 and PR < 0.5 and PR > 0.:
             PR = PR + 0.5
             AR = -AR
         elif AR < 0 and PR > 0.5:
-            PR = PR - 0.5
+            PR = PR -Num.trunc(PR) - 0.5
             AR = -AR
         elif PR < 0 and AR > 0:
-            PR = PR + 1.
-        elif AR < 0 and PR < 0 and PR > -0.5:
-            PR = PR + 0.5
+            PR = PR -Num.trunc(PR)+ 1.
+        elif AR < 0 and PR < 0:
+            PR = PR -Num.trunc(PR) + 0.5
             AR = -AR
-	if PR > 1: 
-            PR = PR -1			
+        if PR > 1:
+            PR = PR -Num.trunc(PR)    
         A.append(AR)
         P.append(PR)
     return L, A, P
 
-def plot_Ar_Pr_Q(fig,allrasd, Qmax, surface_tmp, parameter, param_usage, use_bulk_water, use_lay_el):
+def plot_Ar_Pr_Q(fig,allrasd, Qmax, surface_tmp, parameter, param_usage, use_lay_el):
 
-    L, A, P =  calc_A_P_Q(Qmax, allrasd.g_inv, surface_tmp, parameter, param_usage, use_bulk_water, use_lay_el)
+    L, A, P =  calc_A_P_Q(Qmax, allrasd.g_inv, surface_tmp, parameter, param_usage, use_lay_el)
     q_data = []
     A_data = []
     Aerr_data = []

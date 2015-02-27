@@ -53,7 +53,7 @@ def ctr_data(scans,ctr=None,I=None,Inorm=None,Ierr=None,Ibgr=None,
         # check for defaults
         if I==None: I ='I'
         if Inorm==None: Inorm='io'
-        if Ierr==None: Inorm='Ierr',
+        if Ierr==None: Ierr='Ierr',
         if Ibgr==None: Ibgr='Ibgr',
         if corr_params==None: corr_params={}
         if scan_type==None:scan_type='image'

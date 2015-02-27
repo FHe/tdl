@@ -11,7 +11,7 @@ Frank Heberling (Frank.Heberling@kit.edu)
 import wx
 import os
 import time
-from thread import start_new_thread, allocate_lock
+import random
 import numpy as Num
 
 try:
@@ -116,20 +116,26 @@ class wxCtrFitFrame(wx.Frame):
             self.nb.MainControlPage.datafile.SetValue(self.filename[0])
             self.nb.MainControlPage.Rod_weight = []
             self.nb.MainControlPage.rodweight = []
+            self.nb.MainControlPage.plotrod = []
+            self.nb.MainControlPage.Plot_rod = []
             if self.nb.bulk != []:
                 for x in self.nb.data:
                     x.calcFbulk(self.nb.cell, self.nb.bulk, self.nb.g_inv, database)
             if self.nb.surface != []:
                 for x in self.nb.data:
-                    x.calc_fs(self.nb.runningDB, self.nb.g_inv)
                     x.calc_q_ang(self.nb.g_inv)
-   
+                    x.calc_fs(self.nb.runningDB, self.nb.surface)
             for i in range(len(self.nb.data)):
                 wx.StaticText(self.nb.MainControlPage, label = (str(int(self.nb.data[i].H))+' '+str(int(self.nb.data[i].K))+' L'), pos=(350,25*i+67), size=(40,20))
                 self.nb.MainControlPage.rodweight.append(wx.TextCtrl(self.nb.MainControlPage,1000+i, pos=(400,25*i+65), size=(30,20)))
                 self.nb.MainControlPage.Rod_weight.append(1)
                 self.nb.MainControlPage.rodweight[i].SetValue('1')
                 self.Bind(wx.EVT_TEXT, self.nb.MainControlPage.setrodweight, self.nb.MainControlPage.rodweight[i])
+                self.nb.MainControlPage.plotrod.append(wx.CheckBox(self.nb.MainControlPage,1000+i+len(self.nb.data), label = '', pos = (450, 25*i+65), size=(30,20)))
+                self.nb.MainControlPage.Plot_rod.append(True)
+                self.nb.MainControlPage.plotrod[i].SetValue(True)
+                wx.EVT_CHECKBOX(self.nb.MainControlPage, self.nb.MainControlPage.plotrod[i].GetId(), self.nb.MainControlPage.editplotrod)
+                
             self.nb.SetSelection(0)
         dlg.Destroy()
 
@@ -169,8 +175,8 @@ class wxCtrFitFrame(wx.Frame):
             self.nb.MainControlPage.surfacefile.SetValue(self.filename[2])
             if self.nb.data != []:
                 for x in self.nb.data:
-                    x.calc_fs(self.nb.runningDB, self.nb.g_inv)
                     x.calc_q_ang(self.nb.g_inv)
+                    x.calc_fs(self.nb.runningDB, self.nb.surface)
             self.nb.SetSelection(0)
         dlg.Destroy()
 
@@ -293,6 +299,10 @@ class wxCtrFitFrame(wx.Frame):
                 self.nb.MainControlPage.Rod_weight.append(1)
                 self.nb.MainControlPage.rodweight[i].SetValue('1')
                 self.Bind(wx.EVT_TEXT, self.nb.MainControlPage.setrodweight, self.nb.MainControlPage.rodweight[i])
+                self.nb.MainControlPage.plotrod.append(wx.CheckBox(self.nb.MainControlPage,1000+i+len(self.nb.data), label = '', pos = (450, 25*i+65), size=(30,20)))
+                self.nb.MainControlPage.Plot_rod.append(True)
+                self.nb.MainControlPage.plotrod[i].SetValue(True)
+                wx.EVT_CHECKBOX(self.nb.MainControlPage, self.nb.MainControlPage.plotrod[i].GetId(), self.nb.MainControlPage.editplotrod)
             #read bulk
             self.nb.bulk, self.nb.cell, self.nb.NLayers = read_bulk(self.dirname[1]+'/'+self.filename[1])
             self.nb.MainControlPage.bulkfile.SetValue(self.filename[1])
@@ -316,8 +326,8 @@ class wxCtrFitFrame(wx.Frame):
             self.nb.MainControlPage.surfacefile.SetValue(self.filename[2])
             if self.nb.data != []:
                 for x in self.nb.data:
-                    x.calc_fs(self.nb.runningDB, self.nb.g_inv)
                     x.calc_q_ang(self.nb.g_inv)
+                    x.calc_fs(self.nb.runningDB, self.nb.surface)
             # read parameters
             self.nb.parameter, self.nb.param_labels = read_parameters(self.dirname[3]+'/'+self.filename[3])
             self.nb.MainControlPage.parameterfile.SetValue(self.filename[3])
@@ -594,12 +604,13 @@ class MainControlPanel(wx.Panel):
         self.doplotsurf = False
         self.doplotrough = False
         self.doplotwater = False
-        self.plotdims = [2,3]
+        self.plotdims = [3,3]
 
         self.BVclusters = []
         self.use_BVC = False
 
         self.Rod_weight = [] #List of Rod weights
+        self.Plot_rod = [] #List of Booleans 
         self.RMS = -1
         self.RMS_flag = 1
         self.UBW_flag = False
@@ -621,11 +632,15 @@ class MainControlPanel(wx.Panel):
             self.iren = vtk.vtkRenderWindowInteractor()
             self.renderer = vtk.vtkRenderer()
             self.atom_styles = atom_styles
+            self.position = []
 
         self.Figure1 = None
         self.Figure2 = None
         self.Figure3 = None
         self.StopFit = False
+
+        self.auto_fit = False
+        self.auto_fit_n = 6
         
         #Panel Headings
         wx.StaticText(self, label = 'File Information: ', pos=(20, 12), size=(100, 20))
@@ -635,14 +650,16 @@ class MainControlPanel(wx.Panel):
         wx.StaticLine(self, pos = (500,0), size = (5,650), style = wx.LI_VERTICAL)
         wx.StaticLine(self, pos = (0,265), size = (270,5), style = wx.LI_HORIZONTAL)
         wx.StaticLine(self, pos = (0,515), size = (270,5), style = wx.LI_HORIZONTAL)
-        wx.StaticLine(self, pos = (500,90), size = (285,5), style = wx.LI_HORIZONTAL)
-        wx.StaticLine(self, pos = (500,205), size = (285,5), style = wx.LI_HORIZONTAL)
+        wx.StaticLine(self, pos = (500,115), size = (285,5), style = wx.LI_HORIZONTAL)
+        wx.StaticLine(self, pos = (500,230), size = (285,5), style = wx.LI_HORIZONTAL)
         wx.StaticLine(self, pos = (500,560), size = (285,5), style = wx.LI_HORIZONTAL)
 
         wx.StaticText(self, label = 'Rods:', pos=(350,42), size=(40,20))
         wx.StaticText(self, label = 'weight', pos=(400,42), size=(30,20))
+        wx.StaticText(self, label = 'plot', pos=(450,42), size=(30,20))
         #rod weights
         self.rodweight = []# List of TextControls to read rod weights
+        self.plotrod = []# List of checkboxes to specify which rods are plotted
 
         #display uploaded files
         wx.StaticText(self, label = 'data file = ', pos=(20, 42), size=(100, 20))
@@ -714,53 +731,62 @@ class MainControlPanel(wx.Panel):
         self.random_pars = wx.CheckBox(self, label = '  start Fit with random parameters', pos = (520, 65))
         self.random_pars.SetValue(False)
         wx.EVT_CHECKBOX(self, self.random_pars.GetId(), self.setrandom_pars)
-       
-        #### Downhill Simplex parameters and options #################################### 
-        wx.StaticText(self, label = 'Simplex Parameters:  ', pos=(520, 105), size=(200, 20))
 
-        wx.StaticText(self, label = 'alpha:    ', pos=(520, 132), size=(40, 20))
-        self.alpha = wx.TextCtrl(self, pos=(570,130), size=(60,20))
+        #Fitting option auto_fit
+        self.auto_fit_box = wx.CheckBox(self, label = '  auto fit,   number of params:', pos = (520, 90))
+        self.auto_fit_box.SetValue(False)
+        wx.EVT_CHECKBOX(self, self.auto_fit_box.GetId(), self.setauto_fit)
+
+        self.auto_fit_n_box = wx.TextCtrl(self, pos=(700,90), size=(60,20))
+        self.auto_fit_n_box.SetValue(str(self.auto_fit_n))
+        self.Bind(wx.EVT_TEXT, self.setauto_fit_n, self.auto_fit_n_box)
+        
+        #### Downhill Simplex parameters and options #################################### 
+        wx.StaticText(self, label = 'Simplex Parameters:  ', pos=(520, 130), size=(200, 20))
+
+        wx.StaticText(self, label = 'alpha:    ', pos=(520, 157), size=(40, 20))
+        self.alpha = wx.TextCtrl(self, pos=(570,155), size=(60,20))
         self.alpha.SetValue(str(self.simplex_params[0]))
         self.Bind(wx.EVT_TEXT, self.setalpha, self.alpha)
 
-        wx.StaticText(self, label = 'beta:    ', pos=(640, 132), size=(50, 20))
-        self.beta = wx.TextCtrl(self, pos=(700,130), size=(60,20))
+        wx.StaticText(self, label = 'beta:    ', pos=(640, 157), size=(50, 20))
+        self.beta = wx.TextCtrl(self, pos=(700,155), size=(60,20))
         self.beta.SetValue(str(self.simplex_params[1]))
         self.Bind(wx.EVT_TEXT, self.setbeta, self.beta)
 
-        wx.StaticText(self, label = 'gamma:    ', pos=(520, 157), size=(40, 20))
-        self.gamma = wx.TextCtrl(self, pos=(570,155), size=(60,20))
+        wx.StaticText(self, label = 'gamma:    ', pos=(520, 182), size=(40, 20))
+        self.gamma = wx.TextCtrl(self, pos=(570,180), size=(60,20))
         self.gamma.SetValue(str(self.simplex_params[2]))
         self.Bind(wx.EVT_TEXT, self.setgamma, self.gamma)
 
-        wx.StaticText(self, label = 'delta:    ', pos=(640, 157), size=(50, 20))
-        self.delta = wx.TextCtrl(self, pos=(700,155), size=(60,20))
+        wx.StaticText(self, label = 'delta:    ', pos=(640, 182), size=(50, 20))
+        self.delta = wx.TextCtrl(self, pos=(700,180), size=(60,20))
         self.delta.SetValue(str(self.simplex_params[3]))
         self.Bind(wx.EVT_TEXT, self.setdelta, self.delta)
 
-        wx.StaticText(self, label = 'Ftol:    ', pos=(520, 182), size=(40, 20))
-        self.ftol = wx.TextCtrl(self, pos=(570,180), size=(60,20))
+        wx.StaticText(self, label = 'Ftol:    ', pos=(520, 207), size=(40, 20))
+        self.ftol = wx.TextCtrl(self, pos=(570,205), size=(60,20))
         self.ftol.SetValue(str(self.simplex_params[4]))
         self.Bind(wx.EVT_TEXT, self.setftol, self.ftol)
 
-        wx.StaticText(self, label = 'maxiter:    ', pos=(640, 182), size=(50, 20))
-        self.maxiter = wx.TextCtrl(self, pos=(700,180), size=(60,20))
+        wx.StaticText(self, label = 'maxiter:    ', pos=(640, 207), size=(50, 20))
+        self.maxiter = wx.TextCtrl(self, pos=(700,205), size=(60,20))
         self.maxiter.SetValue(str(self.simplex_params[5]))
         self.Bind(wx.EVT_TEXT, self.setmaxiter, self.maxiter)
         
         ################### statistics input ###################################################
-        wx.StaticText(self, label = 'Parameter Statistics:  ', pos=(520, 220), size=(200, 20))
+        wx.StaticText(self, label = 'Parameter Statistics:  ', pos=(520, 245), size=(200, 20))
 
-        wx.StaticText(self, label = 'fract. param. change: ', pos=(520, 247), size=(110, 20))
-        self.fpc_control = wx.TextCtrl(self, pos=(700,245), size=(60,20))
+        wx.StaticText(self, label = 'fract. param. change: ', pos=(520, 272), size=(110, 20))
+        self.fpc_control = wx.TextCtrl(self, pos=(700,270), size=(60,20))
         self.fpc_control.SetValue(str(self.fpc))
         self.Bind(wx.EVT_TEXT, self.setfpc, self.fpc_control)
 
-        self.statisticsbutton = wx.Button(self, label = 'calculate parameter statistics', pos =(520,270), size=(240,25))
+        self.statisticsbutton = wx.Button(self, label = 'calculate parameter statistics', pos =(520,295), size=(240,25))
         self.Bind(wx.EVT_BUTTON, self.OnClickStatistics, self.statisticsbutton)
 
         self.getparam = wx.ComboBox(self,-1, value=self.used_params[-1],\
-                                     pos=(640, 305), size=(120,20),\
+                                     pos=(640, 330), size=(120,20),\
                                      choices=self.used_params,style=wx.CB_READONLY)
         self.Bind(wx.EVT_COMBOBOX, self.setparam, self.getparam)
 
@@ -806,7 +832,9 @@ class MainControlPanel(wx.Panel):
                 print 'rod weight must be >= 0'
             else:
                 self.Rod_weight[rod] = a
-
+    def editplotrod(self, event):
+        rod = event.GetId()-1000-len(self.nb.data)
+        self.Plot_rod[rod] = self.plotrod[rod].GetValue()
     def OnClick(self,e):
         t0 = time.clock()
         self.nb.data, self.RMS = calc_CTRs(self.nb.parameter,self.nb.parameter_usage, self.nb.data, self.nb.cell,\
@@ -814,7 +842,7 @@ class MainControlPanel(wx.Panel):
                                self.BVclusters, self.RMS_flag, self.use_lay_el, self.el)
         print 'time in [s] needed to process calc_CTRs: '+str(time.clock() -t0)
         self.Figure1 = plot_rods(self.Figure1, self.nb.data, self.plotdims, self.doplotbulk, self.doplotsurf, self.doplotrough,\
-                                                 self.doplotwater, self.RMS)
+                                                 self.doplotwater, self.RMS, self.Plot_rod)
         self.Figure1.canvas.draw()
         check_vibes(self.nb.surface,self.nb.parameter, self.nb.parameter_usage)
     def OnPlotedens(self, e):
@@ -826,7 +854,7 @@ class MainControlPanel(wx.Panel):
     def on_calc_BVS(self, e):
         for i in range(len(self.BVclusters)):
             global_parms, surface = param_unfold(self.nb.parameter,self.nb.parameter_usage, self.nb.surface, self.UBW_flag, self.use_lay_el)
-            surface = RB_update(self.nb.rigid_bodies, surface, self.nb.parameter, self.nb.cell)
+            surface = RB_update(self.nb.rigid_bodies, surface, self.nb.parameter, calcM(self.nb.cell))
             BVS, dist = self.BVclusters[i].calc_BVS(surface)
             print 'Bond Valence sum in BV-cluster '+str(i+1)+' = '+str(round(BVS, 4))+'; distances are: \n'
             for j in range(len(dist)):
@@ -838,6 +866,15 @@ class MainControlPanel(wx.Panel):
         
     def set_bulk_water(self,event):
         self.UBW_flag = self.douse_bulk_water.GetValue()
+
+    def setauto_fit(self, e):
+        self.auto_fit = self.auto_fit_box.GetValue()
+    def setauto_fit_n(self, event):
+        try:
+            a = int(event.GetString())
+            self.auto_fit_n = a
+        except ValueError:
+            pass
     ################################# Simplex options event functions #########################################
     def setalpha(self,event):
         try:
@@ -899,7 +936,7 @@ class MainControlPanel(wx.Panel):
         sens = self.sensitivities[param]
         parameter = self.used_params[param]
         dp = self.nb.parameter[parameter][4]
-        self.Figure1 = plot_sens(self.Figure1,self.nb.data, self.plotdims, dp, sens, parameter)
+        self.Figure1 = plot_sens(self.Figure1,self.nb.data, self.plotdims, dp, sens, parameter, self.Plot_rod)
         self.Figure1.canvas.draw()
         pass
     def setfpc(self, event):
@@ -913,54 +950,58 @@ class MainControlPanel(wx.Panel):
             pass
     ################################################################################################################################
     def OnClickStatistics(self,e):
-        self.nb.frame.SetStatusText(' computing parameter statistics ', 0)
-        self.nb.parameter, self.sensitivities, self.correl_matrix, self.used_params, self.RMS = statistics(self.fpc,self.nb.parameter,self.nb.parameter_usage, self.nb.data, self.nb.cell,self.nb.surface,\
+        if len(self.used_params) == 0:
+            print "NO PARAMETERS SELECTED!"
+            pass
+        else:
+            self.nb.frame.SetStatusText(' computing parameter statistics ', 0)
+            self.nb.parameter, self.sensitivities, self.correl_matrix, self.used_params, self.RMS = statistics(self.fpc,self.nb.parameter,self.nb.parameter_usage, self.nb.data, self.nb.cell,self.nb.surface,\
                                                                                self.nb.NLayers, self.nb.runningDB, self.nb.g_inv, self.Rod_weight, self.nb.rigid_bodies,\
                                                                                self.UBW_flag,self.use_BVC, self.BVclusters, self.RMS_flag, self.use_lay_el, self.el)
         
-        for i in range(len(self.nb.param_labels)):
-            self.nb.ParameterPage.control8[i].SetValue(str(round(self.nb.parameter[self.nb.param_labels[i]][4], 8)))
-        if len(self.used_params) > 0:
-            self.getparam.Clear()
-            self.getparam.AppendItems(self.used_params)
-            self.getparam.SetSelection(0)
-        if self.correl_matrix[0][0] != 0:
-            b = len(self.correl_matrix)
-            print '\nParameter Correlations: \n'
-            print '\nParameter Correlations between 0.95 and 1.00: \n'
-            n = 0
-            for i in range(b):
-                for j in range(b):
-                    if j > i:
-                        if self.correl_matrix[i][j] >= 0.95 and self.correl_matrix[i][j] <= 1.0:
-                            n = n+1
-                            print self.used_params[i] + ' & ' + self.used_params[j] + ': ' + str(round(self.correl_matrix[i][j],5))
-            if n == 0: print 'None \n'
-            else: print '\n'
-            n = 0
-            print '\nParameter Correlations between 0.8 and 0.95: \n'
-            for i in range(b):
-                for j in range(b):
-                    if j > i:
-                        if self.correl_matrix[i][j] >= 0.8 and self.correl_matrix[i][j] < 0.95:
-                            n = n+1
-                            print self.used_params[i] + ' & ' + self.used_params[j] + ': ' + str(round(self.correl_matrix[i][j],5))
-            if n == 0: print 'None \n'
-            else: print '\n'
-            n = 0
-            print '\nParameter Correlations between 0.5 and 0.8: \n'
-            for i in range(b):
-                for j in range(b):
-                    if j > i:
-                        if self.correl_matrix[i][j] >= 0.5 and self.correl_matrix[i][j] < 0.5:
-                            n = n+1
-                            print self.used_params[i] + ' & ' + self.used_params[j] + ': ' + str(round(self.correl_matrix[i][j],5))
-            if n == 0: print 'None \n'
-            else: print '\n'
-            print 'statistics calculation finished, chi**2 = '+str(round(self.RMS,3))+'\n'
-            print 'number of used variables = '+str(b)
-        self.nb.frame.SetStatusText(' statistics calculation finished, chi**2 = '+str(round(self.RMS,3)), 0)
-        pass
+            for i in range(len(self.nb.param_labels)):
+                self.nb.ParameterPage.control8[i].SetValue(str(round(self.nb.parameter[self.nb.param_labels[i]][4], 8)))
+            if len(self.used_params) > 0:
+                self.getparam.Clear()
+                self.getparam.AppendItems(self.used_params)
+                self.getparam.SetSelection(0)
+            if self.correl_matrix[0][0] != 0:
+                b = len(self.correl_matrix)
+                print '\nParameter Correlations: \n'
+                print '\nParameter Correlations between 0.95 and 1.00: \n'
+                n = 0
+                for i in range(b):
+                    for j in range(b):
+                        if j > i:
+                            if self.correl_matrix[i][j] >= 0.95 and self.correl_matrix[i][j] <= 1.0:
+                                n = n+1
+                                print self.used_params[i] + ' & ' + self.used_params[j] + ': ' + str(round(self.correl_matrix[i][j],5))
+                if n == 0: print 'None \n'
+                else: print '\n'
+                n = 0
+                print '\nParameter Correlations between 0.8 and 0.95: \n'
+                for i in range(b):
+                    for j in range(b):
+                        if j > i:
+                            if self.correl_matrix[i][j] >= 0.8 and self.correl_matrix[i][j] < 0.95:
+                                n = n+1
+                                print self.used_params[i] + ' & ' + self.used_params[j] + ': ' + str(round(self.correl_matrix[i][j],5))
+                if n == 0: print 'None \n'
+                else: print '\n'
+                n = 0
+                print '\nParameter Correlations between 0.5 and 0.8: \n'
+                for i in range(b):
+                    for j in range(b):
+                        if j > i:
+                            if self.correl_matrix[i][j] >= 0.5 and self.correl_matrix[i][j] < 0.5:
+                                n = n+1
+                                print self.used_params[i] + ' & ' + self.used_params[j] + ': ' + str(round(self.correl_matrix[i][j],5))
+                if n == 0: print 'None \n'
+                else: print '\n'
+                print 'statistics calculation finished, chi**2 = '+str(round(self.RMS,3))+'\n'
+                print 'number of used variables = '+str(b)
+            self.nb.frame.SetStatusText(' statistics calculation finished, chi**2 = '+str(round(self.RMS,3)), 0)
+            pass
     
     ################################################################################################################################
     def OnClickStructure(self, e):
@@ -968,6 +1009,8 @@ class MainControlPanel(wx.Panel):
             self.structure_count = self.structure_count + 1
             if self.structure_count == 1:
                 self.renderer = createStructureRenderer(self.nb.surface, self.nb.cell, self.nb.parameter, self.nb.parameter_usage, self.nb.rigid_bodies, self.atom_styles)
+                self.renderer.GetActiveCamera().Azimuth(180)
+                self.renderer.GetActiveCamera().Elevation(270)
                 self.renWin.AddRenderer(self.renderer)
                 self.iren.SetRenderWindow(self.renWin)
                 style = vtk.vtkInteractorStyleTrackballCamera()
@@ -977,8 +1020,17 @@ class MainControlPanel(wx.Panel):
                 self.renWin.Render()
                 self.iren.Start()
             else:
+                self.position = [self.renderer.GetActiveCamera().GetPosition(),self.renderer.GetActiveCamera().GetFocalPoint(),\
+                                 self.renderer.GetActiveCamera().GetViewUp(),self.renderer.GetActiveCamera().GetDistance(),\
+                                 self.renderer.GetActiveCamera().GetClippingRange(),self.renderer.GetActiveCamera().GetParallelScale() ]
                 self.renWin.RemoveRenderer(self.renderer)
                 self.renderer = createStructureRenderer(self.nb.surface, self.nb.cell, self.nb.parameter, self.nb.parameter_usage, self.nb.rigid_bodies, self.atom_styles)
+                self.renderer.GetActiveCamera().SetPosition(self.position[0])
+                self.renderer.GetActiveCamera().SetFocalPoint(self.position[1])
+                self.renderer.GetActiveCamera().SetViewUp(self.position[2])
+                self.renderer.GetActiveCamera().SetDistance(self.position[3])
+                self.renderer.GetActiveCamera().SetClippingRange(self.position[4])
+                self.renderer.GetActiveCamera().SetParallelScale(self.position[5])
                 self.renWin.AddRenderer(self.renderer)
                 self.renWin.Render()
     def OnClickStructureScreenshot(self, e):
@@ -993,8 +1045,8 @@ class MainControlPanel(wx.Panel):
             dlg.Destroy()
     #########################################################################################################################
     def OnClickStartFit(self,e):
-        flag = check_model_consistency(self.nb.param_labels, self.nb.parameter, self.nb.parameter_usage, self.nb.rigid_bodies, self.UBW_flag, self.use_lay_el)
-        if flag:
+        flag = check_model_consistency(self.nb.param_labels, self.nb.parameter, self.nb.parameter_usage, self.nb.rigid_bodies, self.UBW_flag, self.use_lay_el, self.nb.surface[-1][11])
+        if flag == True and self.auto_fit == False:
             self.RMS = -1
             self.StopFit = False
             self.nb.data, self.nb.parameter, self.RMS = simplex(self.nb.frame,self.nb.parameter, self.nb.parameter_usage, self.nb.data, self.nb.cell, self.nb.surface, \
@@ -1002,15 +1054,57 @@ class MainControlPanel(wx.Panel):
             while wx.GetApp().Pending():
                 wx.GetApp().Dispatch()
                 wx.GetApp().Yield(True)
-            self.Figure1 = plot_rods(self.Figure1,self.nb.data, self.plotdims, self.doplotbulk, self.doplotsurf, self.doplotrough, self.doplotwater, self.RMS)
+            self.Figure1 = plot_rods(self.Figure1,self.nb.data, self.plotdims, self.doplotbulk, self.doplotsurf, self.doplotrough, self.doplotwater, self.RMS, self.Plot_rod)
             self.Figure1.canvas.draw()
             check_vibes(self.nb.surface,self.nb.parameter, self.nb.parameter_usage)
             for i in range(len(self.nb.param_labels)):
                 if self.nb.parameter[self.nb.param_labels[i]][3] and self.nb.parameter[self.nb.param_labels[i]][5] == '':
                     self.nb.ParameterPage.control1[i].SetValue(str(round(self.nb.parameter[self.nb.param_labels[i]][0], 12)))
             self.nb.SetSelection(2)
+        
+        elif flag == True and self.auto_fit == True:
+            print "STARTING AUTO FIT PROCEDURE"
+            self.RMS = -1
+            self.StopFit = False
+            param_list = []
+            for key in self.nb.parameter.keys():
+                if self.nb.parameter[key][3]:
+                    param_list.append(key)
+            print str(len(param_list))+" parameters are adjusted: " + str(param_list)
+            if len(param_list) < self.auto_fit_n:
+                self.auto_fit_n = len(param_list)
+                self.auto_fit_n_box.SetValue(str(self.auto_fit_n))    
+            j = 0
+            while self.StopFit == False:
+                j = j + 1
+                parameter = random.sample(set(param_list), self.auto_fit_n)
+                print "auto fit run " + str(j)
+                print "parameter set : " + str(parameter)
+                for key in self.nb.parameter.keys():
+                    self.nb.parameter[key][3] = False
+                for key in parameter:
+                    self.nb.parameter[key][3] = True
+                self.nb.data, self.nb.parameter, self.RMS = simplex(self.nb.frame, self.nb.parameter, self.nb.parameter_usage, self.nb.data, self.nb.cell, self.nb.surface, \
+                               self.nb.NLayers, self.nb.runningDB, self.nb.rigid_bodies, self)
+                while wx.GetApp().Pending():
+                    wx.GetApp().Dispatch()
+                    wx.GetApp().Yield(True)
+                self.Figure1 = plot_rods(self.Figure1,self.nb.data, self.plotdims, self.doplotbulk, self.doplotsurf, self.doplotrough, self.doplotwater, self.RMS, self.Plot_rod)
+                self.Figure1.canvas.draw()
+                check_vibes(self.nb.surface,self.nb.parameter, self.nb.parameter_usage)
+                for i in range(len(self.nb.param_labels)):
+                    if self.nb.parameter[self.nb.param_labels[i]][3] and self.nb.parameter[self.nb.param_labels[i]][5] == '':
+                        self.nb.ParameterPage.control1[i].SetValue(str(round(self.nb.parameter[self.nb.param_labels[i]][0], 12)))
+            
+            for key in self.nb.parameter.keys():
+                    self.nb.parameter[key][3] = False
+            for key in param_list:
+                self.nb.parameter[key][3] = True
+            print "AUTO FIT STOPPED BY USER"
+            
     def OnClickStopFit(self,e):
         self.StopFit = True   
+##########################################################################################################################
 ##########################################################################################################################
 class ParameterPanel(wx.ScrolledWindow):
     def __init__(self,parent):
@@ -1026,8 +1120,6 @@ class ParameterPanel(wx.ScrolledWindow):
         self.control7 = []
         self.control8 = []
         self.togglesteps = []
-
-        self.lock = allocate_lock()
 
         wx.StaticText(self, label = 'value', pos=(170, 10), size=(100, 20))
         wx.StaticText(self, label = 'std.-dev.', pos=(290, 10), size=(100, 20))
@@ -1060,7 +1152,7 @@ class ParameterPanel(wx.ScrolledWindow):
         self.nb.parameter[self.nb.param_labels[item]][4] = dp
         self.control8[item].SetValue(str(round(self.nb.parameter[self.nb.param_labels[item]][4],8)))
         self.nb.MainControlPage.Figure1 = plot_sens(self.nb.MainControlPage.Figure1,self.nb.data, self.nb.MainControlPage.plotdims, \
-                                                    dp, sensitivities, param_label)
+                                                    dp, sensitivities, param_label, self.nb.MainControlPage.Plot_rod)
         self.nb.MainControlPage.Figure1.canvas.draw()
 
 
@@ -1112,7 +1204,7 @@ class ParameterPanel(wx.ScrolledWindow):
                                                               self.nb.MainControlPage.UBW_flag, self.nb.MainControlPage.use_BVC, self.nb.MainControlPage.BVclusters,\
                                                               self.nb.MainControlPage.RMS_flag, self.nb.MainControlPage.use_lay_el, self.nb.MainControlPage.el)
         self.nb.MainControlPage.Figure1 = plot_rods(self.nb.MainControlPage.Figure1,self.nb.data, self.nb.MainControlPage.plotdims, self.nb.MainControlPage.doplotbulk, self.nb.MainControlPage.doplotsurf, self.nb.MainControlPage.doplotrough,\
-                                                 self.nb.MainControlPage.doplotwater, self.nb.MainControlPage.RMS)
+                                                 self.nb.MainControlPage.doplotwater, self.nb.MainControlPage.RMS, self.nb.MainControlPage.Plot_rod)
         self.nb.MainControlPage.Figure1.canvas.draw()
         self.nb.MainControlPage.Figure2 = plot_edensity(self.nb.MainControlPage.Figure2, self.nb.surface, self.nb.parameter, self.nb.parameter_usage, self.nb.cell, database, self.nb.rigid_bodies, self.nb.MainControlPage.UBW_flag, self.nb.MainControlPage.use_lay_el, self.nb.ResonantDataPage.resel)
         self.nb.MainControlPage.Figure2.canvas.draw()
@@ -1138,7 +1230,7 @@ class ParameterPanel(wx.ScrolledWindow):
                                                               self.nb.MainControlPage.UBW_flag, self.nb.MainControlPage.use_BVC, self.nb.MainControlPage.BVclusters,\
                                                               self.nb.MainControlPage.RMS_flag, self.nb.MainControlPage.use_lay_el, self.nb.MainControlPage.el)
         self.nb.MainControlPage.Figure1 = plot_rods(self.nb.MainControlPage.Figure1,self.nb.data, self.nb.MainControlPage.plotdims, self.nb.MainControlPage.doplotbulk, self.nb.MainControlPage.doplotsurf, self.nb.MainControlPage.doplotrough,\
-                                                 self.nb.MainControlPage.doplotwater, self.nb.MainControlPage.RMS)
+                                                 self.nb.MainControlPage.doplotwater, self.nb.MainControlPage.RMS, self.nb.MainControlPage.Plot_rod)
         self.nb.MainControlPage.Figure1.canvas.draw()
         self.nb.MainControlPage.Figure2 = plot_edensity(self.nb.MainControlPage.Figure2,self.nb.surface, self.nb.parameter, self.nb.parameter_usage, self.nb.cell, database, self.nb.rigid_bodies, self.nb.MainControlPage.UBW_flag, self.nb.MainControlPage.use_lay_el,self.nb.ResonantDataPage.resel)
         self.nb.MainControlPage.Figure2.canvas.draw()

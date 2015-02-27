@@ -153,9 +153,10 @@ def Rasd_difference(allrasd, surface_tmp, parameter, param_usage, use_bulk_water
     allrasd.RMS = 0
     allrasd.ndata = 0
     
-    global_parms, surface = param_unfold(parameter,param_usage, surface_tmp, use_bulk_water, use_lay_el)
+    global_parms, surface = param_unfold(parameter,param_usage, surface_tmp, False, use_lay_el)
     natoms = len(surface)
-    occ_el, K,sig_el,sig_el_bar,d_el,d0_el,sig_water, sig_water_bar, d_water, zwater, Scale, specScale, beta= global_parms
+    (occ_el, K,sig_el,sig_el_bar,d_el,d0_el,sig_water,sig_water_bar, d_water,zwater,\
+     Scale,specScale,beta, domainfractions,cg, d_kapton, mu_kapton, d_solution, mu_solution) = global_parms
     
     for Rasd in allrasd.list:
         if Rasd.use_in_Refine:
@@ -212,14 +213,15 @@ def Rasd_difference(allrasd, surface_tmp, parameter, param_usage, use_bulk_water
                     PR = PR + 0.5
                     AR = -AR
                 elif AR < 0 and PR > 0.5:
-                    PR = PR - 0.5
+                    PR = PR -Num.trunc(PR) - 0.5
                     AR = -AR
                 elif PR < 0 and AR > 0:
-                    PR = PR + 1.
-                elif AR < 0 and PR < 0 and PR > -0.5:
-                    PR = PR + 0.5
+                    PR = PR -Num.trunc(PR)+ 1.
+                elif AR < 0 and PR < 0:
+                    PR = PR -Num.trunc(PR) + 0.5
                     AR = -AR
-                if PR > 1: PR = PR -1
+                if PR > 1:
+                    PR = PR -Num.trunc(PR)  
                 Rasd.AR_refine = AR
                 Rasd.PR_refine = PR
 
@@ -234,21 +236,10 @@ def Rasd_difference(allrasd, surface_tmp, parameter, param_usage, use_bulk_water
 def calc_F_lay_el(hkl, occ, K, sig, sig_bar, d, d0, g_inv):
     q = hkl[2]* g_inv[2][2]**0.5
     f = Num.exp(-2 * Num.pi**2 * q**2 * sig)*occ
-    x = Num.pi * q * d
-    al = 2 * Num.pi**2 * q**2 * sig_bar + K * d
-    a = Num.exp(al)*Num.cos(2*x)-1
-    b = Num.exp(al)*Num.sin(-2*x)
-    c = 4 * Num.cos(x)**2 * Num.sinh(al/2)**2 - 4 * Num.sin(x)**2 * Num.cosh(al/2)**2
-    d = -2 * Num.sin(2*x) * Num.sinh(al)
-    wert = 2*Num.pi*hkl[2]*d0
-    rez = Num.cos(wert)
-    imz = Num.sin(wert)
-    wert = c**2 + d**2
-    relayer = (a*c + b*d)/(wert)
-    imlayer = (b*c - a*d)/(wert)
-    re = f* (relayer * rez - imlayer * imz)
-    im = f* (relayer * imz + imlayer * rez)
-    return re, im
+    Fz = Num.exp(2*Num.pi*1.0j*hkl[2]*d0)
+    Flayer = 1/(1-Num.exp(2.0j*Num.pi * q * d)*Num.exp(-2 * Num.pi**2 * q**2 * sig_bar + K * d))
+    F = f* Flayer*Fz
+    return Num.real(F), Num.imag(F)
 ####################################################################################################################################################
 def res_param_statistics(fpc, parameter,param_usage, allrasd, surface, use_bulk_water, use_lay_el):
     n = 0
