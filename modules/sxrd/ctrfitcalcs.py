@@ -58,19 +58,30 @@ def rigid_body_rotation(atoms, theta, phi, chi, cell):
     theta = Num.radians(theta)
     phi = Num.radians(phi)
     chi = Num.radians(chi)
-    R_theta = Num.array([[Num.cos(theta),Num.sin(theta),0],\
-                         [-Num.sin(theta),Num.cos(theta),0],[0,0,1]],float)
-    R_phi   = Num.array([[Num.cos(phi),0,Num.sin(phi)],[0,1,0],\
-                         [-Num.sin(phi),0,Num.cos(phi)]],float)
-    R_chi   = Num.array([[1,0,0],[0,Num.cos(chi),Num.sin(chi)],\
-                         [0,-Num.sin(chi),Num.cos(chi)]],float)
+    R_theta = Num.array([[Num.cos(theta),-Num.sin(theta),0],\
+                         [Num.sin(theta),Num.cos(theta),0],[0,0,1]],float)
+    R_phi   = Num.array([[Num.cos(phi),0,-Num.sin(phi)],[0,1,0],\
+                         [Num.sin(phi),0,Num.cos(phi)]],float)
+    R_chi   = Num.array([[1,0,0],[0,Num.cos(chi),-Num.sin(chi)],\
+                         [0,Num.sin(chi),Num.cos(chi)]],float)
     R  = Num.dot(R_theta,Num.dot(R_phi,R_chi))
-    P = Num.array([[cell[0],0,0],[0,cell[1],0],[0,0,cell[2]]],float)
-    R = Num.dot(Num.linalg.inv(P),Num.dot(R,P))
+    def calcM(cell):
+        alpha = Num.radians(cell[3])
+        beta = Num.radians(cell[4])
+        gamma = Num.radians(cell[5])
+        x = Num.cos(beta)*cell[2]
+        y = Num.cos(alpha)*cell[2]*Num.cos(Num.pi/2-gamma)
+        z = (cell[2]**2-x**2-y**2)**0.5
+        M = Num.array([[cell[0],0,0],\
+                       [Num.cos(gamma)*cell[1],Num.cos(Num.pi/2-gamma)*cell[1],0],\
+                       [x,y,z]],float)
+        return M
+    P = calcM(cell)
+    R = Num.dot(Num.dot(P,R),Num.linalg.inv(P))
     new_atoms = []
     for atom in atoms:
         coords = Num.array([atom[1],atom[2],atom[3]],float) - Center
-        coords = Num.dot(R, coords) + Center
+        coords = Num.dot(coords, R) + Center
         new_atom = [atom[0], coords[0], coords[1], coords[2], atom[4], atom[5],\
                     atom[6], atom[7], atom[8], atom[9], atom[10]]
         new_atoms.append(new_atom)
@@ -133,7 +144,15 @@ def BV_impact(BVclusters, surface):
     return impact
 ################################################################################
 ######################  Parameter handling  ####################################
+def param_equal(param):
+    keys = param.keys()
+    for key in keys:
+        if param[key][5] in keys:
+            param[key][0] = param[param[key][5]][0]
+    return param
+
 def param_unfold(param, param_use, surface, use_bulk_water, use_lay_el):
+    param = param_equal(param)
     if use_bulk_water:
         zwater = param['zwater'][0]
         sig_water = param['sig_water'][0]
@@ -213,7 +232,9 @@ class Fitting_Rod:
         self.F = Num.array([],float)
         self.Ferr = Num.array([],float)
         self.Lb = Num.array([],float)
-        self.Db = float
+        self.Db = Num.array([],float)
+        self.q_ang = []
+        self.fs = {}
 
         self.re_bulk = Num.array([],float)
         self.im_bulk = Num.array([],float)
@@ -236,6 +257,24 @@ class Fitting_Rod:
             re_UC , im_UC = calc_Fuc(hkl,bulk,g_inv,database)
             self.re_bulk[i] = re_ctr*re_UC - im_ctr*im_UC
             self.im_bulk[i] = re_UC*im_ctr + re_ctr*im_UC
+            
+    def calc_q_ang(self, g_inv):
+        for l in self.L:
+            q = Num.array([self.H * Num.sqrt(g_inv[0][0]), self.K * Num.sqrt(g_inv[1][1]), l* Num.sqrt(g_inv[2][2])], float)
+            self.q_ang.append(q)
+
+    def calc_fs(self, DB, g_inv):
+        for k in DB.keys():
+            if k not in self.fs.keys():
+                self.fs[k] = Num.array([],float)
+                for l in self.L:
+                    hkl = [self.H, self.K, l]
+                    q = Num.sqrt(Num.dot(Num.dot(hkl,g_inv),hkl))
+                    f_par = DB[k]
+                    f = (f_par[0]*Num.exp(-(q/4/Num.pi)**2*f_par[1]) + f_par[2]*Num.exp(-(q/4/Num.pi)**2*f_par[3]) +\
+                        f_par[4]*Num.exp(-(q/4/Num.pi)**2*f_par[5]) + f_par[6]*Num.exp(-(q/4/Num.pi)**2*f_par[7]) + f_par[8])
+                    self.fs[k] = Num.append(self.fs[k] , f)            
+                
 ####################################################################################################    
 def calc_Fuc(hkl,bulk,g_inv,database):
     a = 0
@@ -250,39 +289,29 @@ def calc_Fuc(hkl,bulk,g_inv,database):
         b = b + (f * Num.sin(2*Num.pi*(hkl[0]*bulk[i][1] + hkl[1]*bulk[i][2] + hkl[2]*bulk[i][3])))
     return a, b
 
-def Fatom(atom,database, U,qd4pi,pi,q_Ang,hkl,low,exp,dot,sinus,cosinus,sqrt):
-    f_par = database[low(atom[0])]
+def Fatom(atom,fs,U,pi,q_Ang,hkl,low,exp,dot,sinus,cosinus,sqrt):
+    f = fs[low(atom[0])]
     U[0][0] = atom[4]
     U[0][1] = U[1][0] = atom[7]*sqrt((atom[4]*atom[5]))
     U[0][2] = U[2][0] = atom[8]*sqrt((atom[4]*atom[6]))
     U[1][1] = atom[5]
     U[1][2] = U[2][1] = atom[9]*sqrt((atom[5]*atom[6]))
     U[2][2] = atom[6]  
-    f = (f_par[0]*exp(-(qd4pi)**2*f_par[1]) + f_par[2]*exp(-(qd4pi)**2*f_par[3]) +\
-        f_par[4]*exp(-(qd4pi)**2*f_par[5]) + f_par[6]*exp(-(qd4pi)**2*f_par[7]) + f_par[8])*\
-        exp(-2* pi**2*(dot(q_Ang,dot(U,q_Ang)))) * atom[10]
+    f = f * exp(-2* pi**2*(dot(q_Ang,dot(U,q_Ang)))) * atom[10]
     x = 2*pi*(hkl[0]*atom[1] + hkl[1]*atom[2] + hkl[2]*atom[3])
     return [f*cosinus(x), f*sinus(x)]
     
-def calc_Fsurf(hkl,surface,g_inv,database,exp=Num.exp,low=str.lower,dot=Num.dot,pi=Num.pi,cosinus=Num.cos,\
-               sinus = Num.sin,sqrt = Num.sqrt,U= Num.ndarray((3,3),float)):
-    q_Ang = [hkl[0]*sqrt(g_inv[0][0]), hkl[1]*sqrt(g_inv[1][1]), hkl[2]*sqrt(g_inv[2][2])]
-    qd4pi = (sqrt(dot(dot(hkl,g_inv),hkl)))/4/pi
+def calc_Fsurf(hkl,surface,exp,low,dot,pi,cosinus,sinus,sqrt,U, fs, q_Ang):
     a = b = 0
-    jobs = [(atom, Fatom(atom,database,U,qd4pi,pi,q_Ang,hkl,low,exp,dot,sinus,cosinus,sqrt)) for atom in surface]
+    jobs = [(atom, Fatom(atom,fs,U,pi,q_Ang,hkl,low,exp,dot,sinus,cosinus,sqrt)) for atom in surface]
     a=b=0
     for atom, job in jobs:
         a = a+job[0]
         b = b+job[1]
     return a,b
 
-def calc_Fwater_layered(hkl, sig, sig_bar, d,zwater, g_inv, f_par, cell):
-    q = hkl[2]* Num.sqrt(g_inv[2][2])
-    qd4pi = q/4/Num.pi
-    Auc = cell[0]* Num.sin(Num.radians(cell[5]))* cell[1]
-    f = Auc * d * 0.033456 * (f_par[0]*Num.exp(-(qd4pi)**2*f_par[1]) + f_par[2]*Num.exp(-(qd4pi)**2*f_par[3]) +\
-            f_par[4]*Num.exp(-(qd4pi)**2*f_par[5]) + f_par[6]*Num.exp(-(qd4pi)**2*f_par[7]) + f_par[8])*\
-            Num.exp(-2 * Num.pi**2 * q**2 * sig)
+def calc_Fwater_layered(hkl, sig, sig_bar, d,zwater, Auc, f, q):
+    f = Auc * d * 0.033456 * f* Num.exp(-2 * Num.pi**2 * q**2 * sig)
     x = Num.pi * q * d
     al = 2 * Num.pi**2 * q**2 * sig_bar
     a = Num.exp(al)*Num.cos(2*x)-1
@@ -299,12 +328,8 @@ def calc_Fwater_layered(hkl, sig, sig_bar, d,zwater, g_inv, f_par, cell):
     im = f* (relayer * imz + imlayer * rez)
     return re, im
         
-def calc_F_layered_el(hkl, occ, K, sig, sig_bar, d, d0, g_inv, f_par):
-    q = hkl[2]* Num.sqrt(g_inv[2][2])
-    qd4pi = q/4/Num.pi
-    f = (f_par[0]*Num.exp(-(qd4pi)**2*f_par[1]) + f_par[2]*Num.exp(-(qd4pi)**2*f_par[3]) +\
-            f_par[4]*Num.exp(-(qd4pi)**2*f_par[5]) + f_par[6]*Num.exp(-(qd4pi)**2*f_par[7]) + f_par[8])*\
-            Num.exp(-2 * Num.pi**2 * q**2 * sig)*occ
+def calc_F_layered_el(hkl, occ, K, sig, sig_bar, d, d0, f, q):
+    f = f* Num.exp(-2 * Num.pi**2 * q**2 * sig)*occ
     x = Num.pi * q * d
     al = 2 * Num.pi**2 * q**2 * sig_bar + K * d
     a = Num.exp(al)*Num.cos(2*x)-1
@@ -321,7 +346,7 @@ def calc_F_layered_el(hkl, occ, K, sig, sig_bar, d, d0, g_inv, f_par):
     im = f* (relayer * imz + imlayer * rez)
     return re, im
         
-def calcF(ctr,global_parms,cell,surface,g_inv,NLayers,database, use_bulk_water, RMS_flag, use_lay_el, el):
+def calcF(ctr,global_parms,Auc,surface,NLayers,use_bulk_water, RMS_flag, use_lay_el, el):
     (occ_el, K,sig_el,sig_el_bar,d_el,d0_el,sig_water,sig_water_bar, d_water,zwater, Scale,specScale,beta) = global_parms
     ctr.bulk = Num.ndarray((len(ctr.L)),float)
     ctr.Fcalc = Num.ndarray((len(ctr.L)),float)
@@ -336,18 +361,20 @@ def calcF(ctr,global_parms,cell,surface,g_inv,NLayers,database, use_bulk_water, 
     sinus = Num.sin
     sqrt = Num.sqrt
     U = Num.ndarray((3,3),float)
-    f_par_water = database['o2-.']
-    if use_lay_el:
-        f_par_el = database[el]
     for i in range(len(ctr.L)):
+        fs = {}
+        for k in ctr.fs.keys():
+            fs[k] = float(ctr.fs[k][i])
+        q_ang = ctr.q_ang[i]
         hkl = [ctr.H,ctr.K,ctr.L[i]]
-        re_surf, im_surf = calc_Fsurf(hkl,surface,g_inv,database,exp,low,dot,pi,cosinus,sinus,sqrt,U)
+        re_surf, im_surf = calc_Fsurf(hkl,surface,exp,low,dot,pi,cosinus,sinus,sqrt,U, fs, q_ang)
             
-        if ctr.L[i] > 0:
-            n = ctr.Lb[i] + round(ctr.L[i]/ctr.Db) * ctr.Db
-        else:
-            n = - ctr.Lb[i] + round(ctr.L[i]/ctr.Db) * ctr.Db
-        rough = (1-beta)/Num.sqrt((1-beta)**2 + 4*beta*sinus(pi*(ctr.L[i] - n)/NLayers)**2)
+        #if ctr.L[i] > 0:
+        #    n = ctr.Lb[i] + round(ctr.L[i]/ctr.Db) * ctr.Db
+        #else:
+        #    n = - ctr.Lb[i] + round(ctr.L[i]/ctr.Db) * ctr.Db
+        #rough = (1-beta)/sqrt((1-beta)**2 + 4*beta*sinus(pi*(ctr.L[i] - n)/NLayers)**2)
+        rough = (1-beta)/sqrt((1-beta)**2 + 4*beta*sinus(pi*(ctr.L[i]-ctr.Lb[i])/ctr.Db[i])**2)
            
         if hkl[0] == 0.0 and hkl[1] == 0.0:
             if not use_bulk_water:
@@ -355,25 +382,25 @@ def calcF(ctr,global_parms,cell,surface,g_inv,NLayers,database, use_bulk_water, 
                 im_water = 0
                 ctr.water[i] = 0
             else:
-                re_water, im_water = calc_Fwater_layered(hkl, sig_water, sig_water_bar, d_water,zwater, g_inv, f_par_water, cell)
-                ctr.water[i] = specScale * Num.sqrt((re_water)**2 + (im_water)**2)
+                re_water, im_water = calc_Fwater_layered(hkl,sig_water,sig_water_bar,d_water,zwater,Auc, fs['o2-.'], q_ang[2])
+                ctr.water[i] = specScale * sqrt((re_water)**2 + (im_water)**2)
             if not use_lay_el:
                 re_el = 0
                 im_el = 0
             else:
-                re_el, im_el = calc_F_layered_el(hkl,occ_el,K, sig_el, sig_el_bar, d_el, d0_el, g_inv, f_par_el) 
+                re_el, im_el = calc_F_layered_el(hkl,occ_el,K, sig_el, sig_el_bar, d_el, d0_el, fs[el], q_ang[2]) 
                     
-            ctr.bulk[i] = specScale * Num.sqrt(ctr.re_bulk[i]**2 + ctr.im_bulk[i]**2)
-            ctr.Fcalc[i] = specScale * rough * Num.sqrt((ctr.re_bulk[i] + re_surf + re_water+ re_el)**2 + (ctr.im_bulk[i] + im_surf + im_water+ im_el)**2)
+            ctr.bulk[i] = specScale * sqrt(ctr.re_bulk[i]**2 + ctr.im_bulk[i]**2)
+            ctr.Fcalc[i] = specScale * rough * sqrt((ctr.re_bulk[i] + re_surf + re_water+ re_el)**2 + (ctr.im_bulk[i] + im_surf + im_water+ im_el)**2)
               
             ctr.rough[i] = rough * specScale
-            ctr.surf[i] = Num.sqrt(re_surf**2 + im_surf**2) * specScale
+            ctr.surf[i] = sqrt(re_surf**2 + im_surf**2) * specScale
         else:
             ctr.bulk[i] = Scale * Num.sqrt(ctr.re_bulk[i]**2 + ctr.im_bulk[i]**2)
             ctr.Fcalc[i] = Scale * rough * Num.sqrt((ctr.re_bulk[i] + re_surf)**2 + (ctr.im_bulk[i] + im_surf)**2)
             ctr.water[i] = 0
             ctr.rough[i] = rough * Scale
-            ctr.surf[i] = Num.sqrt(re_surf**2 + im_surf**2) * Scale                 
+            ctr.surf[i] = sqrt(re_surf**2 + im_surf**2) * Scale                 
     ctr.difference = ((ctr.F - ctr.Fcalc)/ctr.Ferr)**2
     
     return ctr
@@ -385,16 +412,19 @@ def calc_CTRs(parameter,param_usage, dat, cell, surface_tmp, NLayers, database,\
     global_parms, surface_new = param_unfold(parameter,param_usage,surface_tmp,\
                                              use_bulk_water, use_lay_el)
     surface_new = RB_update(rigid_bodies, surface_new, parameter, cell)
+    
+    Auc = cell[0]* Num.sin(Num.radians(cell[5]))* cell[1]
+    
     if parallel:
-        jobs = [(ctr, jobserver.submit(calcF, (ctr,global_parms,cell,\
-                 surface_new,g_inv,NLayers,database,use_bulk_water,RMS_flag,\
+        jobs = [(ctr, jobserver.submit(calcF, (ctr,global_parms,Auc,\
+                 surface_new,NLayers,use_bulk_water,RMS_flag,\
                  use_lay_el, el), (calc_Fsurf, calc_Fwater_layered,\
                  calc_F_layered_el, Fatom),("numpy as Num",)))for ctr in dat]
         dat = []
         for ctr, job in jobs:
             dat.append(job())
     else:
-        jobs = [(ctr,calcF(ctr,global_parms,cell,surface_new,g_inv,NLayers,database,\
+        jobs = [(ctr,calcF(ctr,global_parms,Auc,surface_new,NLayers,\
                         use_bulk_water,RMS_flag, use_lay_el, el)) for ctr in dat]
     RMS = 0
     n = 0
@@ -490,7 +520,7 @@ def read_data(datafile):
     tmp = Fitting_Rod()
     tmp.H = dat1[0][0]
     tmp.K = dat1[0][1]
-    tmp.Db = dat1[0][6]
+    #tmp.Db = dat1[0][6]
     for i in range(len(data)-z):
         one_rod = True
         if i>1:
@@ -501,17 +531,19 @@ def read_data(datafile):
             tmp.F = Num.append(tmp.F,dat1[i][3])
             tmp.Ferr = Num.append(tmp.Ferr,dat1[i][4])
             tmp.Lb = Num.append(tmp.Lb,dat1[i][5])
+            tmp.Db = Num.append(tmp.Db,dat1[i][6])
         else:
             dat.append(tmp)
             tmp = Fitting_Rod()
             tmp.H = dat1[i][0]
             tmp.K = dat1[i][1]
-            tmp.Db = dat1[i][6]
+            #tmp.Db = dat1[i][6]
                 
             tmp.L = Num.append(tmp.L,dat1[i][2])
             tmp.F = Num.append(tmp.F,dat1[i][3])
             tmp.Ferr = Num.append(tmp.Ferr,dat1[i][4])
             tmp.Lb = Num.append(tmp.Lb,dat1[i][5])
+            tmp.Db = Num.append(tmp.Db,dat1[i][6])
                     
     dat.append(tmp)
     return dat
@@ -526,11 +558,11 @@ def read_parameters(parameterfile):
         tmp = str.rsplit(i)
         if tmp[0] != '%':
             if len(tmp) == 5:
-                parameter[tmp[0]]= [float(tmp[1]),float(tmp[2]),float(tmp[3]),False, 0.]
+                parameter[tmp[0]]= [float(tmp[1]),float(tmp[2]),float(tmp[3]),False, 0., '']
                 if tmp[4] == 'True':
                     parameter[tmp[0]][3] = True
             elif len(tmp) == 6:
-                parameter[tmp[0]]= [float(tmp[1]),float(tmp[3]),float(tmp[4]),False, float(tmp[2])]
+                parameter[tmp[0]]= [float(tmp[1]),float(tmp[3]),float(tmp[4]),False, float(tmp[2]), '']
                 if tmp[5] == 'True':
                     parameter[tmp[0]][3] = True
                 
@@ -610,7 +642,8 @@ def write_surface(cell, surface,param,param_use, rigid_bodies, use_bulk_water, u
         line = "%5s %6.5f %6.5f %6.5f %6.5f %6.5f %6.5f %6.5f %6.5f %6.5f %6.5f\n" % (atom[0],atom[1],atom[2],atom[3],\
                                                                                       atom[4],atom[5],atom[6],atom[7],atom[8],atom[9],atom[10])
         f.write(line)    
-
+    f.close()
+    
 def write_cif(cell4, surface4,param4,param_use, rigid_bodies, use_bulk_water, use_lay_el, filename = 'surface.cif'):
     global_parms, surface4 = param_unfold(param4,param_use, surface4, use_bulk_water, use_lay_el)
     surface4 = RB_update(rigid_bodies, surface4, param4, cell4)
@@ -634,10 +667,11 @@ def write_cif(cell4, surface4,param4,param_use, rigid_bodies, use_bulk_water, us
     f.write('_atom_site_fract_y\n')
     f.write('_atom_site_fract_z\n')
     for i in range(len(surface4)):
-        f.write(str(surface4[i][0])+str(i+1)+'  '+str(surface4[i][1])+'  '+str(surface4[i][2])+'  '+str(surface4[i][3])+'\n')
-        f.write(str(surface4[i][0])+str(len(surface4)+i+1)+'  '+str(surface4[i][1]+1)+'  '+str(surface4[i][2])+'  '+str(surface4[i][3])+'\n')
-        f.write(str(surface4[i][0])+str(2*len(surface4)+i+1)+'  '+str(surface4[i][1])+'  '+str(surface4[i][2]+1)+'  '+str(surface4[i][3])+'\n')
-        f.write(str(surface4[i][0])+str(3*len(surface4)+i+1)+'  '+str(surface4[i][1]+1)+'  '+str(surface4[i][2]+1)+'  '+str(surface4[i][3])+'\n')
+        if surface4[i][10] >0:
+            f.write(str(surface4[i][0])+str(i+1)+'  '+str(surface4[i][1])+'  '+str(surface4[i][2])+'  '+str(surface4[i][3])+'\n')
+            f.write(str(surface4[i][0])+str(len(surface4)+i+1)+'  '+str(surface4[i][1]+1)+'  '+str(surface4[i][2])+'  '+str(surface4[i][3])+'\n')
+            f.write(str(surface4[i][0])+str(2*len(surface4)+i+1)+'  '+str(surface4[i][1])+'  '+str(surface4[i][2]+1)+'  '+str(surface4[i][3])+'\n')
+            f.write(str(surface4[i][0])+str(3*len(surface4)+i+1)+'  '+str(surface4[i][1]+1)+'  '+str(surface4[i][2]+1)+'  '+str(surface4[i][3])+'\n')
     f.write('loop_\n')
     f.write('_atom_site_aniso_label\n')
     f.write('_atom_site_aniso_U_11\n')
@@ -647,13 +681,14 @@ def write_cif(cell4, surface4,param4,param_use, rigid_bodies, use_bulk_water, us
     f.write('_atom_site_aniso_U_13\n')
     f.write('_atom_site_aniso_U_23\n')
     for i in range(len(surface4)):
-        uxy = surface4[i][7] * (surface4[i][4])**0.5 * (surface4[i][5])**0.5
-        uxz = surface4[i][8] * (surface4[i][4])**0.5 * (surface4[i][6])**0.5
-        uyz = surface4[i][9] * (surface4[i][5])**0.5 * (surface4[i][6])**0.5
-        f.write(str(surface4[i][0])+str(i+1)+'  '+str(surface4[i][4])+'  '+str(surface4[i][5])+'  '+str(surface4[i][6])+'  '+str(uxy)+'  '+str(uxz)+'  '+str(uyz)+'\n')
-        f.write(str(surface4[i][0])+str(len(surface4)+i+1)+'  '+str(surface4[i][4])+'  '+str(surface4[i][5])+'  '+str(surface4[i][6])+'  '+str(uxy)+'  '+str(uxz)+'  '+str(uyz)+'\n')
-        f.write(str(surface4[i][0])+str(2*len(surface4)+i+1)+'  '+str(surface4[i][4])+'  '+str(surface4[i][5])+'  '+str(surface4[i][6])+'  '+str(uxy)+'  '+str(uxz)+'  '+str(uyz)+'\n')
-        f.write(str(surface4[i][0])+str(3*len(surface4)+i+1)+'  '+str(surface4[i][4])+'  '+str(surface4[i][5])+'  '+str(surface4[i][6])+'  '+str(uxy)+'  '+str(uxz)+'  '+str(uyz)+'\n')
+        if surface4[i][10] >0:
+            uxy = surface4[i][7] * (surface4[i][4])**0.5 * (surface4[i][5])**0.5
+            uxz = surface4[i][8] * (surface4[i][4])**0.5 * (surface4[i][6])**0.5
+            uyz = surface4[i][9] * (surface4[i][5])**0.5 * (surface4[i][6])**0.5
+            f.write(str(surface4[i][0])+str(i+1)+'  '+str(surface4[i][4])+'  '+str(surface4[i][5])+'  '+str(surface4[i][6])+'  '+str(uxy)+'  '+str(uxz)+'  '+str(uyz)+'\n')
+            f.write(str(surface4[i][0])+str(len(surface4)+i+1)+'  '+str(surface4[i][4])+'  '+str(surface4[i][5])+'  '+str(surface4[i][6])+'  '+str(uxy)+'  '+str(uxz)+'  '+str(uyz)+'\n')
+            f.write(str(surface4[i][0])+str(2*len(surface4)+i+1)+'  '+str(surface4[i][4])+'  '+str(surface4[i][5])+'  '+str(surface4[i][6])+'  '+str(uxy)+'  '+str(uxz)+'  '+str(uyz)+'\n')
+            f.write(str(surface4[i][0])+str(3*len(surface4)+i+1)+'  '+str(surface4[i][4])+'  '+str(surface4[i][5])+'  '+str(surface4[i][6])+'  '+str(uxy)+'  '+str(uxz)+'  '+str(uyz)+'\n')
     f.close()
 
 def write_par(parameter, param_labels, filename = 'parameters.new'):
