@@ -14,14 +14,8 @@ import random
 import time
 
 from tdl.modules.xtal.bv_params import bv_params
-
-from sys import maxsize 
 is64bit = False
-if maxsize > 2**32:
-    import bottleneck_x64 as bott
-    is64bit = True
-#else:
-    #import bottleneck_x86 as bott
+
 
 ######################  general calculations  ##################################
 def calc_g_inv(cell):
