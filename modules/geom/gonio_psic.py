@@ -228,15 +228,12 @@ class Psic:
                             beta=beta,gamma=gamma,lam=lam)
         self._calc_UB()
 
-    def set_spec_G(self,G,preparsed=False):
+    def set_spec_G(self,G):
         """
         Take the spec G array for the psic geometry
         and set all the relevant orientation info...
         """
-        if not preparsed:
-            (cell,or0,or1,n) = spec_psic_G(G)
-        else:
-            (cell,or0,or1,n) = G
+        (cell,or0,or1,n) = spec_psic_G(G)
         self.n   = n
         self.or0 = or0
         self.or1 = or1
@@ -697,13 +694,13 @@ class Psic:
         self.pangles['omega'] = omega
 
 ##########################################################################
-def psic_from_spec(G,angles={},preparsed=False):
+def psic_from_spec(G,angles={}):
     """
     pass spec G array and dictionary of angles
     returns a psic instance
     """
     gonio = Psic()
-    if G != None: gonio.set_spec_G(G, preparsed)
+    if G != None: gonio.set_spec_G(G)
     gonio.set_angles(**angles)
     return gonio
 

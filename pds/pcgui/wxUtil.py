@@ -20,7 +20,7 @@ class wxUtil:
         try:
             self.shell = self.GetParent().get_shell()
         except:
-            from .. import shell
+            from pds import shell
             self.shell = shell.Shell(stdin=self,stdout=self,GUI='WXAgg')
 
     ##############################################

@@ -11,12 +11,10 @@ import copy
 import time
 import numpy as num
 
-from .wxUtil import wxUtil
-from tdl.pds.shellutil import mod_import
-from tdl.modules.utils import compound
-from tdl.modules.xrr import interface_model
-
-from .wxXrrBuilderHelp_rsrc import data as r_wxXrrBuilderHelp
+from   pds.pcgui.wxUtil import wxUtil
+from   pds.shellutil import mod_import
+from   tdl.modules.utils import compound
+from   tdl.modules.xrr import interface_model
 
 #########################################################################
 
@@ -97,12 +95,13 @@ class wxXrrBuilder(model.Background, wxUtil):
         self.close()
 
     def on_menuHelpParams_select(self,event): 
-        from . import wxXrrBuilderHelp
+        import wxXrrBuilderHelp
         wxXrrBuilderHelp = mod_import(wxXrrBuilderHelp)
         dir       = os.path.dirname(wxXrrBuilderHelp.__file__)
+        filename  = os.path.join(dir,'wxXrrBuilderHelp.rsrc.py')
         wxXrrBuilderHelp = wxXrrBuilderHelp.wxXrrBuilderHelp
         self.wxXrrBuilderHelp = model.childWindow(self,wxXrrBuilderHelp,
-                                                  rsrc=r_wxXrrBuilderHelp)
+                                                  filename=filename)
         self.wxXrrBuilderHelp.position = (200, 5)
         self.wxXrrBuilderHelp.visible = True
 

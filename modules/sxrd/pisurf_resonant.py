@@ -415,8 +415,7 @@ class ResonantDataPanel(wx.ScrolledWindow):
         for key in res_params.keys():
             self.nb.parameter[key] = res_params[key]
         for i in range(len(self.nb.param_labels)):
-            if self.nb.parameter[self.nb.param_labels[i]][3]:
-                self.nb.ParameterPage.control1[i].SetValue(str(round(self.nb.parameter[self.nb.param_labels[i]][0], 12)))
+            self.nb.ParameterPage.control1[i].SetValue(str(round(self.nb.parameter[self.nb.param_labels[i]][0], 12)))
 
     def OnClickResStatistics(self,e):
         self.nb.frame.SetStatusText(' computing parameter statistics ', 0)
