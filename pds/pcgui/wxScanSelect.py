@@ -15,11 +15,13 @@ import time
 import numpy as num
 from matplotlib import pyplot
 
-from .wxUtil import wxUtil
-from tdl.pds.shellutil import mod_import
+from pds.pcgui.wxUtil import wxUtil
+from pds.shellutil import mod_import
 from tdl.modules import ana as scandata
 
-from .wxScanFilter_rsrc import data as r_wxScanFilter
+rsrc_path = os.path.dirname(__file__)
+#rsrc_path = os.path.split(os.path.abspath(__file__))[0]
+
 ############################################################################
 
 class wxScanSelect(model.Background, wxUtil):
@@ -33,6 +35,7 @@ class wxScanSelect(model.Background, wxUtil):
         # self.setupSizers()
         self.startup  = True
         self.dir      = '.'
+        self.rsrc_path = rsrc_path
 
         # set up shell
         self.shell = None
@@ -268,8 +271,9 @@ class wxScanSelect(model.Background, wxUtil):
         from pds.pcgui import wxScanFilter
         wxScanFilter = mod_import(wxScanFilter)
         wxScanFilter = wxScanFilter.wxScanFilter
+        filename = os.path.join(self.rsrc_path,'wxScanFilter.rsrc.py')
         self.wxScanFilter = model.childWindow(self, wxScanFilter,
-                                              rsrc=r_wxScanFilter)
+                                            filename=filename)
         self.wxScanFilter.position = (320, 160)
         self.wxScanFilter.visible = True
         self.wxScanFilter.filename = os.path.join(str(self.components.SpecPath.text), str(self.components.SpecFile.stringSelection))

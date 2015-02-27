@@ -10,12 +10,10 @@ import os
 import types
 import numpy as num
 
-from .wxUtil import wxUtil
-from tdl.pds.shellutil import mod_import
-from tdl.modules.xtab import xrf_lookup
-from tdl.modules.ana import xrf_data
-
-from .wxXrfHelp_rsrc import data as r_wxXrfHelp
+from   pds.pcgui.wxUtil import wxUtil
+from   pds.shellutil import mod_import
+from   tdl.modules.xtab import xrf_lookup
+from   tdl.modules.ana import xrf_data
 
 #########################################################################
 
@@ -122,12 +120,13 @@ class wxXrf(model.Background, wxUtil):
         return
 
     def on_menuHelpParams_select(self,event): 
-        from . import wxXrfHelp
+        import wxXrfHelp
         wxXrfHelp = mod_import(wxXrfHelp)
         dir       = os.path.dirname(wxXrfHelp.__file__)
+        filename  = os.path.join(dir,'wxXrfHelp.rsrc.py')
+        #print filename
         wxXrfHelp = wxXrfHelp.wxXrfHelp
-        self.XrfHelpWindow = model.childWindow(self,wxXrfHelp,
-                                               rsrc=r_wxXrfHelp)
+        self.XrfHelpWindow = model.childWindow(self,wxXrfHelp,filename=filename)
         self.XrfHelpWindow.position = (200, 5)
         self.XrfHelpWindow.visible = True
     
@@ -179,9 +178,7 @@ class wxXrf(model.Background, wxUtil):
             self.scan_data = False
             name = self.get_xrf_var_name(ignore_idx=True)
             m    = self.get_data(name)
-            if m is None:
-                return False
-            if hasattr(m, 'xrf'):
+            if hasattr(m,'xrf'):
                 node = self.components.Node.text + '.xrf.xrf'
                 self.components.Node.text = node
                 m = m.xrf.xrf
@@ -219,6 +216,7 @@ class wxXrf(model.Background, wxUtil):
             else:
                 self.is_scan = False
             self.ScanParamsToggle()
+
             if type(m) == types.InstanceType:
                 if hasattr(m,'get_energy'):
                     self.post_message("Valid XRF object: %s" % name)
@@ -227,11 +225,11 @@ class wxXrf(model.Background, wxUtil):
                     self.post_message("Invalid XRF object: %s" % name)
                     return False
             else:
-                self.post_message("Invalid XRF object (instance)")
+                self.post_message("Invalid XRF object")
                 return False
             
         except:
-            self.post_message("Invalid XRF object (check xrf var)")
+            self.post_message("Invalid XRF object")
             return False
 
     def get_scan_idx(self,):

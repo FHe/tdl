@@ -9,7 +9,7 @@ import wx
 import os
 import types
 
-from .wxUtil import wxUtil
+from  pds.pcgui.wxUtil import wxUtil
 
 ########################################################################
 
